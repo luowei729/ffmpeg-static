@@ -12,10 +12,6 @@ SRT_REPO="${SRT_REPO:-https://github.com/Haivision/srt.git}"
 SRT_REF="${SRT_REF:-v1.5.5}"
 ALSA_REPO="${ALSA_REPO:-https://github.com/alsa-project/alsa-lib.git}"
 ALSA_REF="${ALSA_REF:-v1.2.14}"
-LIBDRM_REPO="${LIBDRM_REPO:-https://gitlab.freedesktop.org/mesa/drm.git}"
-LIBDRM_REF="${LIBDRM_REF:-libdrm-2.4.125}"
-LIBVA_REPO="${LIBVA_REPO:-https://github.com/intel/libva.git}"
-LIBVA_REF="${LIBVA_REF:-2.22.0}"
 X265_REPO="${X265_REPO:-https://bitbucket.org/multicoreware/x265_git.git}"
 X265_REF="${X265_REF:-4.1}"
 TARGET="${TARGET:-linux-amd64}"
@@ -24,7 +20,6 @@ CONFIG_FILE="${CONFIG_FILE:-$ROOT_DIR/config/ffmpeg.configure}"
 PKG_CONFIG_PATH_EXTRA="${PKG_CONFIG_PATH_EXTRA:-}"
 EXTRA_FFMPEG_FLAGS="${EXTRA_FFMPEG_FLAGS:-}"
 AUTO_SKIP_MISSING_DEPS="${AUTO_SKIP_MISSING_DEPS:-1}"
-FULLY_STATIC="${FULLY_STATIC:-1}"
 ALSA_CONFIG_DIR="${ALSA_CONFIG_DIR:-/usr/share/alsa}"
 BUILD_BRAND="${BUILD_BRAND:-https://www.lkz.pub}"
 BUILD_TIMEZONE="${BUILD_TIMEZONE:-Asia/Shanghai}"
@@ -94,7 +89,6 @@ pkg_for_flag() {
     --enable-libtheora) echo "theora" ;;
     --enable-libvidstab) echo "vidstab" ;;
     --enable-libvo-amrwbenc) echo "vo-amrwbenc" ;;
-    --enable-vaapi) echo "libva" ;;
     --enable-libvorbis) echo "vorbis" ;;
     --enable-libvmaf) echo "libvmaf" ;;
     --enable-libvpx) echo "vpx" ;;
@@ -112,31 +106,14 @@ pkg_usable() {
   local tmp_dir
   tmp_dir="$(mktemp -d)"
 
-  if [ "$FULLY_STATIC" = "1" ]; then
-    if ! pkg-config --exists --static "$pkg"; then
-      rm -rf "$tmp_dir"
-      return 1
-    fi
-
-    if ! printf 'int main(void) { return 0; }\n' |
-      "${CC:-cc}" -x c - -o "$tmp_dir/probe" -static \
-        $(pkg-config --cflags --libs --static "$pkg") >/dev/null 2>&1; then
-      rm -rf "$tmp_dir"
-      return 1
-    fi
-
-    rm -rf "$tmp_dir"
-    return 0
-  fi
-
-  if ! pkg-config --exists "$pkg"; then
+  if ! pkg-config --exists --static "$pkg"; then
     rm -rf "$tmp_dir"
     return 1
   fi
 
   if ! printf 'int main(void) { return 0; }\n' |
-    "${CC:-cc}" -x c - -o "$tmp_dir/probe" \
-      $(pkg-config --cflags --libs "$pkg") >/dev/null 2>&1; then
+    "${CC:-cc}" -x c - -o "$tmp_dir/probe" -static \
+      $(pkg-config --cflags --libs --static "$pkg") >/dev/null 2>&1; then
     rm -rf "$tmp_dir"
     return 1
   fi
@@ -170,7 +147,7 @@ read_config_flags() {
 
     pkg="$(pkg_for_flag "$flag" || true)"
     if [ "$AUTO_SKIP_MISSING_DEPS" = "1" ] && [ -n "$pkg" ] && ! is_required_config_flag "$flag" && ! pkg_usable "$pkg"; then
-      log "Skipping $flag because pkg-config package '$pkg' was not usable"
+      log "Skipping $flag because static pkg-config package '$pkg' was not usable"
       continue
     fi
 
@@ -299,121 +276,6 @@ build_alsa() {
   make -C "$alsa_build_dir" install
 }
 
-sync_libdrm() {
-  local libdrm_src_dir="$WORK_DIR/libdrm"
-
-  mkdir -p "$WORK_DIR"
-  if [ ! -d "$libdrm_src_dir/.git" ]; then
-    log "Cloning libdrm from $LIBDRM_REPO"
-    git_clone "$LIBDRM_REPO" "$libdrm_src_dir"
-  fi
-
-  log "Fetching libdrm updates"
-  git -C "$libdrm_src_dir" fetch --tags --prune origin
-
-  log "Checking out libdrm ref: $LIBDRM_REF"
-  git -C "$libdrm_src_dir" checkout --force "$LIBDRM_REF"
-}
-
-build_libdrm() {
-  local libdrm_src_dir="$WORK_DIR/libdrm"
-  local libdrm_build_dir="$WORK_DIR/build-libdrm"
-
-  sync_libdrm
-
-  rm -rf "$libdrm_build_dir"
-  mkdir -p "$libdrm_build_dir" "$OUTPUT_DIR"
-
-  log "Configuring static libdrm"
-  meson setup "$libdrm_build_dir" "$libdrm_src_dir" \
-    --prefix="$OUTPUT_DIR" \
-    --libdir=lib \
-    --default-library=static \
-    --buildtype=release \
-    -Dtests=false \
-    -Dudev=false \
-    -Dcairo-tests=disabled \
-    -Dman-pages=disabled \
-    -Dvalgrind=disabled
-
-  log "Compiling static libdrm with $JOBS jobs"
-  meson compile -C "$libdrm_build_dir" -j "$JOBS"
-
-  log "Installing static libdrm into $OUTPUT_DIR"
-  meson install -C "$libdrm_build_dir"
-}
-
-sync_libva() {
-  local libva_src_dir="$WORK_DIR/libva"
-
-  mkdir -p "$WORK_DIR"
-  if [ ! -d "$libva_src_dir/.git" ]; then
-    log "Cloning libva from $LIBVA_REPO"
-    git_clone "$LIBVA_REPO" "$libva_src_dir"
-  fi
-
-  log "Fetching libva updates"
-  git -C "$libva_src_dir" fetch --tags --prune origin
-
-  log "Checking out libva ref: $LIBVA_REF"
-  git -C "$libva_src_dir" checkout --force "$LIBVA_REF"
-}
-
-patch_libva_pkg_config() {
-  local pc_file
-  local private_libs="-ldrm -ldl -lpthread"
-
-  for pc_file in "$OUTPUT_DIR/lib/pkgconfig/libva.pc" "$OUTPUT_DIR/lib/pkgconfig/libva-drm.pc"; do
-    [ -f "$pc_file" ] || continue
-
-    log "Patching pkg-config metadata: $pc_file"
-    if grep -q '^Libs\.private:' "$pc_file"; then
-      perl -0pi -e 's/^Libs\.private:\s*.*$/Libs.private: -ldrm -ldl -lpthread/m' "$pc_file"
-    else
-      printf '\nLibs.private: %s\n' "$private_libs" >>"$pc_file"
-    fi
-  done
-}
-
-build_libva() {
-  local libva_src_dir="$WORK_DIR/libva"
-  local libva_build_dir="$WORK_DIR/build-libva"
-
-  sync_libva
-
-  rm -rf "$libva_build_dir"
-  mkdir -p "$libva_build_dir" "$OUTPUT_DIR"
-
-  log "Preparing static libva"
-  (
-    cd "$libva_src_dir"
-    NOCONFIGURE=1 ./autogen.sh
-  )
-
-  log "Configuring static libva"
-  (
-    cd "$libva_build_dir"
-    "$libva_src_dir/configure" \
-      --prefix="$OUTPUT_DIR" \
-      --libdir="$OUTPUT_DIR/lib" \
-      --sysconfdir=/etc \
-      --with-drivers-path=/usr/lib/x86_64-linux-gnu/dri \
-      --enable-static \
-      --disable-shared \
-      --disable-x11 \
-      --disable-glx \
-      --disable-wayland
-  )
-
-  log "Compiling static libva with $JOBS jobs"
-  make -C "$libva_build_dir" -j "$JOBS"
-
-  log "Installing static libva into $OUTPUT_DIR"
-  make -C "$libva_build_dir" install
-
-  patch_libva_pkg_config
-}
-
 verify_alsa_runtime_path() {
   local binary bad_path
 
@@ -424,21 +286,6 @@ verify_alsa_runtime_path() {
     log "Verifying ALSA runtime path is portable: $binary"
     if strings "$binary" | grep -Fq "$bad_path"; then
       echo "$binary contains non-portable ALSA config path '$bad_path'." >&2
-      exit 1
-    fi
-  done
-}
-
-verify_libva_runtime_path() {
-  local binary bad_path
-
-  require_cmd strings
-  bad_path="$OUTPUT_DIR/etc/libva.conf"
-
-  for binary in "$OUTPUT_DIR/ffmpeg" "$OUTPUT_DIR/ffprobe"; do
-    log "Verifying libva runtime path is portable: $binary"
-    if strings "$binary" | grep -Fq "$bad_path"; then
-      echo "$binary contains non-portable libva config path '$bad_path'." >&2
       exit 1
     fi
   done
@@ -464,138 +311,27 @@ verify_binary_linkage() {
 
   require_cmd readelf
 
-  if [ "$FULLY_STATIC" = "1" ]; then
-    for binary in "$OUTPUT_DIR/ffmpeg" "$OUTPUT_DIR/ffprobe"; do
-      log "Verifying fully static ELF: $binary"
-      if readelf -l "$binary" | grep -Eq 'INTERP|Requesting program interpreter'; then
-        echo "$binary has a dynamic loader/interpreter; expected a fully static binary." >&2
-        exit 1
-      fi
-
-      if readelf -d "$binary" 2>/dev/null | grep -q 'NEEDED'; then
-        echo "$binary has dynamic NEEDED libraries; expected a fully static binary." >&2
-        exit 1
-      fi
-
-      if command -v ldd >/dev/null 2>&1; then
-        ldd_output="$(ldd "$binary" 2>&1 || true)"
-        grep -q 'not a dynamic executable' <<<"$ldd_output" || {
-          echo "$binary is not reported as fully static by ldd." >&2
-          printf '%s\n' "$ldd_output" >&2
-          exit 1
-        }
-      fi
-    done
-
-    return 0
-  fi
-
   for binary in "$OUTPUT_DIR/ffmpeg" "$OUTPUT_DIR/ffprobe"; do
-    log "Verifying dynamic ELF linkage: $binary"
-    readelf -l "$binary" | grep -Eq 'INTERP|Requesting program interpreter' || {
-      echo "$binary has no dynamic loader/interpreter; VAAPI builds must be dynamically linked." >&2
+    log "Verifying fully static ELF: $binary"
+    if readelf -l "$binary" | grep -Eq 'INTERP|Requesting program interpreter'; then
+      echo "$binary has a dynamic loader/interpreter; expected a fully static binary." >&2
       exit 1
-    }
+    fi
+
+    if readelf -d "$binary" 2>/dev/null | grep -q 'NEEDED'; then
+      echo "$binary has dynamic NEEDED libraries; expected a fully static binary." >&2
+      exit 1
+    fi
 
     if command -v ldd >/dev/null 2>&1; then
       ldd_output="$(ldd "$binary" 2>&1 || true)"
-      if grep -q 'not a dynamic executable' <<<"$ldd_output"; then
-        echo "$binary is static; VAAPI builds must be dynamically linked." >&2
-        exit 1
-      fi
-      if grep -q 'not found' <<<"$ldd_output"; then
-        echo "$binary has unresolved dynamic libraries." >&2
+      grep -q 'not a dynamic executable' <<<"$ldd_output" || {
+        echo "$binary is not reported as fully static by ldd." >&2
         printf '%s\n' "$ldd_output" >&2
         exit 1
-      fi
+      }
     fi
   done
-
-  log "Verifying VAAPI runtime libraries are dynamically linked"
-  readelf -d "$OUTPUT_DIR/ffmpeg" | grep -Eq 'Shared library: \[libva\.so' || {
-    echo "ffmpeg is not dynamically linked to libva; VAAPI would not load correctly." >&2
-    exit 1
-  }
-  readelf -d "$OUTPUT_DIR/ffmpeg" | grep -Eq 'Shared library: \[libva-drm\.so' || {
-    echo "ffmpeg is not dynamically linked to libva-drm; VAAPI DRM devices would not load correctly." >&2
-    exit 1
-  }
-  if command -v ldd >/dev/null 2>&1; then
-    ldd "$OUTPUT_DIR/ffmpeg" | grep -Eq 'libdrm\.so' || {
-      echo "ffmpeg does not resolve libdrm through dynamic linkage; VAAPI DRM runtime support is incomplete." >&2
-      exit 1
-    }
-  fi
-}
-
-copy_runtime_libraries() {
-  local item
-  local lib_path
-  local lib_name
-  local runtime_dir="$OUTPUT_DIR/lib"
-  local -a scan_queue=()
-  local -a scanned=()
-  local found_new=0
-
-  [ "$FULLY_STATIC" != "1" ] || return 0
-
-  mkdir -p "$runtime_dir"
-  scan_queue=("$OUTPUT_DIR/bin/ffmpeg" "$OUTPUT_DIR/bin/ffprobe")
-
-  while [ "${#scan_queue[@]}" -gt 0 ]; do
-    item="${scan_queue[0]}"
-    scan_queue=("${scan_queue[@]:1}")
-
-    if printf '%s\n' "${scanned[@]}" | grep -Fxq "$item"; then
-      continue
-    fi
-    scanned+=("$item")
-
-    log "Collecting runtime shared libraries for $item"
-    while IFS= read -r lib_path; do
-      [ -n "$lib_path" ] || continue
-      [ -f "$lib_path" ] || continue
-
-      lib_name="$(basename "$lib_path")"
-      case "$lib_name" in
-        ld-linux-*|ld-musl-*|libanl.so.*|libBrokenLocale.so.*|libc.so.*|libdl.so.*|libm.so.*|libmvec.so.*|libnsl.so.*|libnss_*.so.*|libpthread.so.*|libresolv.so.*|librt.so.*|libthread_db.so.*|libutil.so.*)
-          continue
-          ;;
-      esac
-
-      if [ ! -e "$runtime_dir/$lib_name" ]; then
-        cp -L "$lib_path" "$runtime_dir/$lib_name"
-        found_new=1
-      fi
-
-      if ! printf '%s\n' "${scanned[@]}" "${scan_queue[@]}" | grep -Fxq "$runtime_dir/$lib_name"; then
-        scan_queue+=("$runtime_dir/$lib_name")
-      fi
-    done < <(LD_LIBRARY_PATH="$runtime_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$item" | awk '
-      /=>/ && $3 ~ /^\// { print $3 }
-      !/=>/ && $1 ~ /^\// { print $1 }
-    ')
-  done
-
-  if [ "$found_new" = "0" ]; then
-    log "No additional runtime shared libraries were needed"
-  fi
-}
-
-set_runtime_rpath() {
-  [ "$FULLY_STATIC" != "1" ] || return 0
-
-  require_cmd patchelf
-
-  log "Setting runtime library search paths"
-  patchelf --force-rpath --set-rpath '$ORIGIN/../lib' "$OUTPUT_DIR/bin/ffmpeg"
-  patchelf --force-rpath --set-rpath '$ORIGIN/../lib' "$OUTPUT_DIR/bin/ffprobe"
-  patchelf --force-rpath --set-rpath '$ORIGIN/lib' "$OUTPUT_DIR/ffmpeg"
-  patchelf --force-rpath --set-rpath '$ORIGIN/lib' "$OUTPUT_DIR/ffprobe"
-
-  while IFS= read -r lib_path; do
-    patchelf --force-rpath --set-rpath '$ORIGIN' "$lib_path" || true
-  done < <(find "$OUTPUT_DIR/lib" -maxdepth 1 -type f -name '*.so*')
 }
 
 sync_x265() {
@@ -729,26 +465,20 @@ build_ffmpeg() {
   build_x265
 
   local -a config_flags
-  local -a pkg_config_flags=()
   local -a target_flags
   local extra_version="${BUILD_BRAND} ${BUILD_TIME}"
-  local extra_ldflags="-L$OUTPUT_DIR/lib ${EXTRA_LDFLAGS:-}"
+  local extra_ldflags="-L$OUTPUT_DIR/lib -static ${EXTRA_LDFLAGS:-}"
   local extra_libs="-lpthread -lm -ldl -lstdc++ -lssl -lcrypto -latomic ${EXTRA_LIBS:-}"
 
   mapfile -t config_flags < <(read_config_flags)
   mapfile -t target_flags < <(target_configure_flags)
-
-  if [ "$FULLY_STATIC" = "1" ]; then
-    pkg_config_flags=(--pkg-config-flags=--static)
-    extra_ldflags="-L$OUTPUT_DIR/lib -static ${EXTRA_LDFLAGS:-}"
-  fi
 
   log "Configuring FFmpeg"
   (
     cd "$BUILD_DIR"
     if ! "$SRC_DIR/configure" \
       --prefix="$OUTPUT_DIR" \
-      "${pkg_config_flags[@]}" \
+      --pkg-config-flags="--static" \
       --extra-cflags="-I$OUTPUT_DIR/include ${EXTRA_CFLAGS:-}" \
       --extra-ldflags="$extra_ldflags" \
       --extra-libs="$extra_libs" \
@@ -782,23 +512,6 @@ write_build_info() {
     echo "alsa_ref=$ALSA_REF"
     echo "alsa_commit=$(git -C "$WORK_DIR/alsa-lib" rev-parse HEAD)"
     echo "alsa_describe=$(git -C "$WORK_DIR/alsa-lib" describe --tags --always --dirty 2>/dev/null || true)"
-    if [ -d "$WORK_DIR/libdrm/.git" ]; then
-      echo "libdrm_ref=$LIBDRM_REF"
-      echo "libdrm_commit=$(git -C "$WORK_DIR/libdrm" rev-parse HEAD)"
-      echo "libdrm_describe=$(git -C "$WORK_DIR/libdrm" describe --tags --always --dirty 2>/dev/null || true)"
-    else
-      echo "libdrm_source=system"
-      echo "libdrm_version=$(pkg-config --modversion libdrm 2>/dev/null || true)"
-    fi
-    if [ -d "$WORK_DIR/libva/.git" ]; then
-      echo "libva_ref=$LIBVA_REF"
-      echo "libva_commit=$(git -C "$WORK_DIR/libva" rev-parse HEAD)"
-      echo "libva_describe=$(git -C "$WORK_DIR/libva" describe --tags --always --dirty 2>/dev/null || true)"
-    else
-      echo "libva_source=system"
-      echo "libva_version=$(pkg-config --modversion libva 2>/dev/null || true)"
-      echo "libva_drm_version=$(pkg-config --modversion libva-drm 2>/dev/null || true)"
-    fi
     echo "x265_ref=$X265_REF"
     echo "x265_commit=$(git -C "$WORK_DIR/x265" rev-parse HEAD)"
     echo "x265_describe=$(git -C "$WORK_DIR/x265" describe --tags --always --dirty 2>/dev/null || true)"
@@ -809,7 +522,6 @@ write_build_info() {
     echo "built_at=$(TZ="$BUILD_TIMEZONE" date +%Y-%m-%dT%H:%M:%S%z)"
     echo "configure_file=$CONFIG_FILE"
     echo "auto_skip_missing_deps=$AUTO_SKIP_MISSING_DEPS"
-    echo "fully_static=$FULLY_STATIC"
     echo "alsa_config_dir=$ALSA_CONFIG_DIR"
     echo "extra_ffmpeg_flags=$EXTRA_FFMPEG_FLAGS"
   } >"$OUTPUT_DIR/build-info.txt"
@@ -823,8 +535,6 @@ verify_binary() {
 
   cp -f "$OUTPUT_DIR/bin/ffmpeg" "$OUTPUT_DIR/ffmpeg"
   cp -f "$OUTPUT_DIR/bin/ffprobe" "$OUTPUT_DIR/ffprobe"
-  copy_runtime_libraries
-  set_runtime_rpath
 
   log "Built binary:"
   "$OUTPUT_DIR/ffmpeg" -hide_banner -version | sed -n '1,4p'
@@ -832,7 +542,6 @@ verify_binary() {
   verify_binary_linkage
 
   verify_alsa_runtime_path
-  verify_libva_runtime_path
 
   log "Verifying required FFmpeg features"
   "$OUTPUT_DIR/ffmpeg" -hide_banner -devices | grep -Eq '^[[:space:]]*D[ E.]*[[:space:]]+alsa([[:space:]]|$)' || {

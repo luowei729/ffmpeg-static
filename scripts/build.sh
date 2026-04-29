@@ -176,6 +176,7 @@ sync_ffmpeg() {
   fi
 
   patch_ffmpeg_version
+  patch_ffmpeg_configure
 }
 
 patch_ffmpeg_version() {
@@ -187,6 +188,16 @@ patch_ffmpeg_version() {
     sed -i 's/test -n "\$3" && version=\$version-\$3/test -n "$3" \&\& version="$version $3"/' "$version_sh"
   elif grep -q 'version=\$version-\$3' "$version_sh"; then
     sed -i 's/version=\$version-\$3/version="$version $3"/' "$version_sh"
+  fi
+}
+
+patch_ffmpeg_configure() {
+  local configure="$SRC_DIR/configure"
+  [ -f "$configure" ] || return 0
+
+  log "Patching FFmpeg configure to quote extra_version"
+  if grep -q '\$version_sh \$source_path ffbuild/version.h \$extra_version' "$configure"; then
+    sed -i 's/\$version_sh \$source_path ffbuild\/version.h \$extra_version/\$version_sh \$source_path ffbuild\/version.h "\$extra_version"/' "$configure"
   fi
 }
 

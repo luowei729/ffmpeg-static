@@ -12,6 +12,10 @@ SRT_REPO="${SRT_REPO:-https://github.com/Haivision/srt.git}"
 SRT_REF="${SRT_REF:-v1.5.5}"
 ALSA_REPO="${ALSA_REPO:-https://github.com/alsa-project/alsa-lib.git}"
 ALSA_REF="${ALSA_REF:-v1.2.14}"
+LIBDRM_REPO="${LIBDRM_REPO:-https://gitlab.freedesktop.org/mesa/drm.git}"
+LIBDRM_REF="${LIBDRM_REF:-libdrm-2.4.125}"
+LIBVA_REPO="${LIBVA_REPO:-https://github.com/intel/libva.git}"
+LIBVA_REF="${LIBVA_REF:-2.22.0}"
 X265_REPO="${X265_REPO:-https://bitbucket.org/multicoreware/x265_git.git}"
 X265_REF="${X265_REF:-4.1}"
 TARGET="${TARGET:-linux-amd64}"
@@ -220,6 +224,111 @@ build_alsa() {
   make -C "$alsa_build_dir" install
 }
 
+sync_libdrm() {
+  local libdrm_src_dir="$WORK_DIR/libdrm"
+
+  mkdir -p "$WORK_DIR"
+  if [ ! -d "$libdrm_src_dir/.git" ]; then
+    log "Cloning libdrm from $LIBDRM_REPO"
+    git clone "$LIBDRM_REPO" "$libdrm_src_dir"
+  fi
+
+  log "Fetching libdrm updates"
+  git -C "$libdrm_src_dir" fetch --tags --prune origin
+
+  log "Checking out libdrm ref: $LIBDRM_REF"
+  git -C "$libdrm_src_dir" checkout --force "$LIBDRM_REF"
+}
+
+build_libdrm() {
+  local libdrm_src_dir="$WORK_DIR/libdrm"
+  local libdrm_build_dir="$WORK_DIR/build-libdrm"
+
+  sync_libdrm
+
+  rm -rf "$libdrm_build_dir"
+  mkdir -p "$libdrm_build_dir" "$OUTPUT_DIR"
+
+  log "Configuring static libdrm"
+  meson setup "$libdrm_build_dir" "$libdrm_src_dir" \
+    --prefix="$OUTPUT_DIR" \
+    --libdir=lib \
+    --default-library=static \
+    --buildtype=release \
+    -Dtests=false \
+    -Dudev=false \
+    -Dcairo-tests=disabled \
+    -Dman-pages=disabled \
+    -Dvalgrind=disabled
+
+  log "Compiling static libdrm with $JOBS jobs"
+  meson compile -C "$libdrm_build_dir" -j "$JOBS"
+
+  log "Installing static libdrm into $OUTPUT_DIR"
+  meson install -C "$libdrm_build_dir"
+}
+
+sync_libva() {
+  local libva_src_dir="$WORK_DIR/libva"
+
+  mkdir -p "$WORK_DIR"
+  if [ ! -d "$libva_src_dir/.git" ]; then
+    log "Cloning libva from $LIBVA_REPO"
+    git clone "$LIBVA_REPO" "$libva_src_dir"
+  fi
+
+  log "Fetching libva updates"
+  git -C "$libva_src_dir" fetch --tags --prune origin
+
+  log "Checking out libva ref: $LIBVA_REF"
+  git -C "$libva_src_dir" checkout --force "$LIBVA_REF"
+}
+
+patch_libva_pkg_config() {
+  local pc_file
+  local private_libs="-ldrm -ldl -lpthread"
+
+  for pc_file in "$OUTPUT_DIR/lib/pkgconfig/libva.pc" "$OUTPUT_DIR/lib/pkgconfig/libva-drm.pc"; do
+    [ -f "$pc_file" ] || continue
+
+    log "Patching pkg-config metadata: $pc_file"
+    if grep -q '^Libs\.private:' "$pc_file"; then
+      perl -0pi -e 's/^Libs\.private:\s*.*$/Libs.private: -ldrm -ldl -lpthread/m' "$pc_file"
+    else
+      printf '\nLibs.private: %s\n' "$private_libs" >>"$pc_file"
+    fi
+  done
+}
+
+build_libva() {
+  local libva_src_dir="$WORK_DIR/libva"
+  local libva_build_dir="$WORK_DIR/build-libva"
+
+  sync_libva
+
+  rm -rf "$libva_build_dir"
+  mkdir -p "$libva_build_dir" "$OUTPUT_DIR"
+
+  log "Configuring static libva"
+  meson setup "$libva_build_dir" "$libva_src_dir" \
+    --prefix="$OUTPUT_DIR" \
+    --libdir=lib \
+    --default-library=static \
+    --buildtype=release \
+    -Dwith_drm=yes \
+    -Dwith_x11=no \
+    -Dwith_wayland=no \
+    -Dwith_glx=no
+
+  log "Compiling static libva with $JOBS jobs"
+  meson compile -C "$libva_build_dir" -j "$JOBS"
+
+  log "Installing static libva into $OUTPUT_DIR"
+  meson install -C "$libva_build_dir"
+
+  patch_libva_pkg_config
+}
+
 verify_alsa_runtime_path() {
   local binary bad_path
 
@@ -359,11 +468,13 @@ build_ffmpeg() {
   rm -rf "$BUILD_DIR"
   mkdir -p "$BUILD_DIR"
 
+  export PKG_CONFIG_PATH="$OUTPUT_DIR/lib/pkgconfig:$OUTPUT_DIR/lib64/pkgconfig:$PKG_CONFIG_PATH_EXTRA${PKG_CONFIG_PATH_EXTRA:+:}${PKG_CONFIG_PATH:-}"
+
+  build_libdrm
+  build_libva
   build_alsa
   build_srt
   build_x265
-
-  export PKG_CONFIG_PATH="$OUTPUT_DIR/lib/pkgconfig:$OUTPUT_DIR/lib64/pkgconfig:$PKG_CONFIG_PATH_EXTRA${PKG_CONFIG_PATH_EXTRA:+:}${PKG_CONFIG_PATH:-}"
 
   local -a config_flags
   local -a target_flags
@@ -407,6 +518,12 @@ write_build_info() {
     echo "alsa_ref=$ALSA_REF"
     echo "alsa_commit=$(git -C "$WORK_DIR/alsa-lib" rev-parse HEAD)"
     echo "alsa_describe=$(git -C "$WORK_DIR/alsa-lib" describe --tags --always --dirty 2>/dev/null || true)"
+    echo "libdrm_ref=$LIBDRM_REF"
+    echo "libdrm_commit=$(git -C "$WORK_DIR/libdrm" rev-parse HEAD)"
+    echo "libdrm_describe=$(git -C "$WORK_DIR/libdrm" describe --tags --always --dirty 2>/dev/null || true)"
+    echo "libva_ref=$LIBVA_REF"
+    echo "libva_commit=$(git -C "$WORK_DIR/libva" rev-parse HEAD)"
+    echo "libva_describe=$(git -C "$WORK_DIR/libva" describe --tags --always --dirty 2>/dev/null || true)"
     echo "x265_ref=$X265_REF"
     echo "x265_commit=$(git -C "$WORK_DIR/x265" rev-parse HEAD)"
     echo "x265_describe=$(git -C "$WORK_DIR/x265" describe --tags --always --dirty 2>/dev/null || true)"

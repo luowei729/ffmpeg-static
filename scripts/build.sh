@@ -524,36 +524,57 @@ verify_binary_linkage() {
 }
 
 copy_runtime_libraries() {
-  local binary
+  local item
   local lib_path
   local lib_name
   local runtime_dir="$OUTPUT_DIR/lib"
+  local -a scan_queue=()
+  local -a scanned=()
+  local found_new=0
 
   [ "$FULLY_STATIC" != "1" ] || return 0
 
   mkdir -p "$runtime_dir"
+  scan_queue=("$OUTPUT_DIR/bin/ffmpeg" "$OUTPUT_DIR/bin/ffprobe")
 
-  for binary in "$OUTPUT_DIR/bin/ffmpeg" "$OUTPUT_DIR/bin/ffprobe"; do
-    log "Collecting runtime shared libraries for $binary"
+  while [ "${#scan_queue[@]}" -gt 0 ]; do
+    item="${scan_queue[0]}"
+    scan_queue=("${scan_queue[@]:1}")
+
+    if printf '%s\n' "${scanned[@]}" | grep -Fxq "$item"; then
+      continue
+    fi
+    scanned+=("$item")
+
+    log "Collecting runtime shared libraries for $item"
     while IFS= read -r lib_path; do
       [ -n "$lib_path" ] || continue
       [ -f "$lib_path" ] || continue
 
       lib_name="$(basename "$lib_path")"
       case "$lib_name" in
-        ld-linux-*|ld-musl-*|libc.so.*|libdl.so.*|libm.so.*|libpthread.so.*|libresolv.so.*|librt.so.*)
+        ld-linux-*|ld-musl-*|libanl.so.*|libBrokenLocale.so.*|libc.so.*|libdl.so.*|libm.so.*|libmvec.so.*|libnsl.so.*|libnss_*.so.*|libpthread.so.*|libresolv.so.*|librt.so.*|libthread_db.so.*|libutil.so.*)
           continue
           ;;
       esac
 
       if [ ! -e "$runtime_dir/$lib_name" ]; then
         cp -L "$lib_path" "$runtime_dir/$lib_name"
+        found_new=1
       fi
-    done < <(ldd "$binary" | awk '
+
+      if ! printf '%s\n' "${scanned[@]}" "${scan_queue[@]}" | grep -Fxq "$runtime_dir/$lib_name"; then
+        scan_queue+=("$runtime_dir/$lib_name")
+      fi
+    done < <(LD_LIBRARY_PATH="$runtime_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$item" | awk '
       /=>/ && $3 ~ /^\// { print $3 }
       !/=>/ && $1 ~ /^\// { print $1 }
     ')
   done
+
+  if [ "$found_new" = "0" ]; then
+    log "No additional runtime shared libraries were needed"
+  fi
 }
 
 set_runtime_rpath() {
@@ -562,10 +583,14 @@ set_runtime_rpath() {
   require_cmd patchelf
 
   log "Setting runtime library search paths"
-  patchelf --set-rpath '$ORIGIN/../lib' "$OUTPUT_DIR/bin/ffmpeg"
-  patchelf --set-rpath '$ORIGIN/../lib' "$OUTPUT_DIR/bin/ffprobe"
-  patchelf --set-rpath '$ORIGIN/lib' "$OUTPUT_DIR/ffmpeg"
-  patchelf --set-rpath '$ORIGIN/lib' "$OUTPUT_DIR/ffprobe"
+  patchelf --force-rpath --set-rpath '$ORIGIN/../lib' "$OUTPUT_DIR/bin/ffmpeg"
+  patchelf --force-rpath --set-rpath '$ORIGIN/../lib' "$OUTPUT_DIR/bin/ffprobe"
+  patchelf --force-rpath --set-rpath '$ORIGIN/lib' "$OUTPUT_DIR/ffmpeg"
+  patchelf --force-rpath --set-rpath '$ORIGIN/lib' "$OUTPUT_DIR/ffprobe"
+
+  while IFS= read -r lib_path; do
+    patchelf --force-rpath --set-rpath '$ORIGIN' "$lib_path" || true
+  done < <(find "$OUTPUT_DIR/lib" -maxdepth 1 -type f -name '*.so*')
 }
 
 sync_x265() {

@@ -114,7 +114,7 @@ VAAPI 依赖 `libva` 在运行时 `dlopen()` 加载 GPU 驱动，不能做成全
 
 - 自动发布：push `v*` tag 时自动构建并上传 Release 资产
 - 手动发布：Actions 页面运行 `Build FFmpeg Static Releases`
-- 构建环境：不使用 Docker，全部使用 Ubuntu 24.04 runner
+- 构建环境：不使用 Docker，`linux-amd64` 使用 Ubuntu 22.04 runner 以兼容 glibc 2.35，`linux-arm64` 使用 Ubuntu 24.04 ARM runner
 - 产物目标：`linux-amd64`、`linux-arm64`
 
 Linux 目标使用完整配置，包含 ALSA 和 VAAPI。AMD R7 8745H/8745HS 等 AMD 核显运行时需要系统侧 Mesa VAAPI 驱动可用，常见驱动文件是 `radeonsi_drv_video.so`。

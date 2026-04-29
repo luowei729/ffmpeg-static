@@ -53,6 +53,12 @@ FFMPEG_REF=n8.1 ./scripts/build.sh
 FFMPEG_REF=6a1b2c3 ./scripts/build.sh
 ```
 
+SRT 默认从源码静态编译 `v1.5.4`，确保 `srt://` 在全静态构建中可用：
+
+```bash
+SRT_REF=v1.5.4 ./scripts/build.sh
+```
+
 ## 常用参数
 
 ```bash

@@ -8,6 +8,8 @@ BUILD_DIR="${BUILD_DIR:-$WORK_DIR/build}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/dist}"
 FFMPEG_REPO="${FFMPEG_REPO:-https://git.ffmpeg.org/ffmpeg.git}"
 FFMPEG_REF="${FFMPEG_REF:-n8.1}"
+SRT_REPO="${SRT_REPO:-https://github.com/Haivision/srt.git}"
+SRT_REF="${SRT_REF:-v1.5.4}"
 TARGET="${TARGET:-linux-amd64}"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 2)}"
 CONFIG_FILE="${CONFIG_FILE:-$ROOT_DIR/config/ffmpeg.configure}"
@@ -141,6 +143,52 @@ sync_ffmpeg() {
   fi
 }
 
+sync_srt() {
+  local srt_src_dir="$WORK_DIR/srt"
+
+  mkdir -p "$WORK_DIR"
+  if [ ! -d "$srt_src_dir/.git" ]; then
+    log "Cloning SRT from $SRT_REPO"
+    git clone "$SRT_REPO" "$srt_src_dir"
+  fi
+
+  log "Fetching SRT updates"
+  git -C "$srt_src_dir" fetch --tags --prune origin
+
+  log "Checking out SRT ref: $SRT_REF"
+  git -C "$srt_src_dir" checkout --force "$SRT_REF"
+}
+
+build_srt() {
+  local srt_src_dir="$WORK_DIR/srt"
+  local srt_build_dir="$WORK_DIR/build-srt"
+
+  sync_srt
+
+  rm -rf "$srt_build_dir"
+  mkdir -p "$srt_build_dir" "$OUTPUT_DIR"
+
+  log "Configuring static SRT"
+  cmake -S "$srt_src_dir" -B "$srt_build_dir" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$OUTPUT_DIR" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DENABLE_SHARED=OFF \
+    -DENABLE_STATIC=ON \
+    -DENABLE_APPS=OFF \
+    -DENABLE_TESTING=OFF \
+    -DENABLE_UNITTESTS=OFF \
+    -DENABLE_C_DEPS=ON \
+    -DUSE_ENCLIB=openssl
+
+  log "Compiling static SRT with $JOBS jobs"
+  cmake --build "$srt_build_dir" --parallel "$JOBS"
+
+  log "Installing static SRT into $OUTPUT_DIR"
+  cmake --install "$srt_build_dir"
+}
+
 target_configure_flags() {
   case "$TARGET" in
     linux-amd64|linux-arm64)
@@ -158,7 +206,9 @@ build_ffmpeg() {
   rm -rf "$BUILD_DIR"
   mkdir -p "$BUILD_DIR"
 
-  export PKG_CONFIG_PATH="$PKG_CONFIG_PATH_EXTRA${PKG_CONFIG_PATH_EXTRA:+:}${PKG_CONFIG_PATH:-}"
+  build_srt
+
+  export PKG_CONFIG_PATH="$OUTPUT_DIR/lib/pkgconfig:$OUTPUT_DIR/lib64/pkgconfig:$PKG_CONFIG_PATH_EXTRA${PKG_CONFIG_PATH_EXTRA:+:}${PKG_CONFIG_PATH:-}"
 
   local -a config_flags
   local -a target_flags
@@ -194,6 +244,9 @@ write_build_info() {
     echo "ffmpeg_ref=$FFMPEG_REF"
     echo "ffmpeg_commit=$(git -C "$SRC_DIR" rev-parse HEAD)"
     echo "ffmpeg_describe=$(git -C "$SRC_DIR" describe --tags --always --dirty 2>/dev/null || true)"
+    echo "srt_ref=$SRT_REF"
+    echo "srt_commit=$(git -C "$WORK_DIR/srt" rev-parse HEAD)"
+    echo "srt_describe=$(git -C "$WORK_DIR/srt" describe --tags --always --dirty 2>/dev/null || true)"
     echo "target=$TARGET"
     echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "configure_file=$CONFIG_FILE"

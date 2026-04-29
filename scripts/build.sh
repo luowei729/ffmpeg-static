@@ -203,6 +203,11 @@ patch_ffmpeg_configure() {
   if grep -q '\$version_sh \$source_path ffbuild/version.h \$extra_version' "$configure"; then
     sed -i 's/\$version_sh \$source_path ffbuild\/version.h \$extra_version/\$version_sh \$source_path ffbuild\/version.h "\$extra_version"/' "$configure"
   fi
+
+  log "Patching FFmpeg configure to quote EXTRA_VERSION in config.mak"
+  if grep -q '^EXTRA_VERSION=\$extra_version$' "$configure"; then
+    sed -i 's/^EXTRA_VERSION=\$extra_version$/EXTRA_VERSION="$extra_version"/' "$configure"
+  fi
 }
 
 sync_srt() {

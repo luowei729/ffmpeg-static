@@ -211,9 +211,11 @@ verify_binary() {
     fi
 
     if command -v ldd >/dev/null 2>&1; then
-      ldd "$binary" 2>&1 | grep -q 'not a dynamic executable' || {
+      local ldd_output
+      ldd_output="$(ldd "$binary" 2>&1 || true)"
+      grep -q 'not a dynamic executable' <<<"$ldd_output" || {
         echo "$binary is not reported as fully static by ldd." >&2
-        ldd "$binary" >&2 || true
+        printf '%s\n' "$ldd_output" >&2
         exit 1
       }
     fi

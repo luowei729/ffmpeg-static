@@ -187,6 +187,24 @@ build_srt() {
 
   log "Installing static SRT into $OUTPUT_DIR"
   cmake --install "$srt_build_dir"
+
+  patch_srt_pkg_config
+}
+
+patch_srt_pkg_config() {
+  local pc_file
+  local private_libs="-lstdc++ -lssl -lcrypto -latomic -lpthread -lm -ldl"
+
+  for pc_file in "$OUTPUT_DIR/lib/pkgconfig/srt.pc" "$OUTPUT_DIR/lib/pkgconfig/haisrt.pc"; do
+    [ -f "$pc_file" ] || continue
+
+    log "Patching pkg-config metadata: $pc_file"
+    if grep -q '^Libs\.private:' "$pc_file"; then
+      perl -0pi -e 's/^Libs\.private:\s*.*$/Libs.private: -lstdc++ -lssl -lcrypto -latomic -lpthread -lm -ldl/m' "$pc_file"
+    else
+      printf '\nLibs.private: %s\n' "$private_libs" >>"$pc_file"
+    fi
+  done
 }
 
 target_configure_flags() {

@@ -20,6 +20,7 @@ CONFIG_FILE="${CONFIG_FILE:-$ROOT_DIR/config/ffmpeg.configure}"
 PKG_CONFIG_PATH_EXTRA="${PKG_CONFIG_PATH_EXTRA:-}"
 EXTRA_FFMPEG_FLAGS="${EXTRA_FFMPEG_FLAGS:-}"
 AUTO_SKIP_MISSING_DEPS="${AUTO_SKIP_MISSING_DEPS:-1}"
+ALSA_CONFIG_DIR="${ALSA_CONFIG_DIR:-/usr/share/alsa}"
 REQUIRED_CONFIG_FLAGS=(
   --enable-alsa
   --enable-libsrt
@@ -202,6 +203,7 @@ build_alsa() {
     cd "$alsa_build_dir"
     "$alsa_src_dir/configure" \
       --prefix="$OUTPUT_DIR" \
+      --with-configdir="$ALSA_CONFIG_DIR" \
       --disable-shared \
       --enable-static
   )
@@ -211,6 +213,22 @@ build_alsa() {
 
   log "Installing static ALSA into $OUTPUT_DIR"
   make -C "$alsa_build_dir" install
+}
+
+verify_no_build_paths() {
+  local binary path
+
+  require_cmd strings
+
+  for binary in "$OUTPUT_DIR/ffmpeg" "$OUTPUT_DIR/ffprobe"; do
+    log "Verifying no build paths are embedded: $binary"
+    for path in "$ROOT_DIR" "$OUTPUT_DIR" "$WORK_DIR"; do
+      if strings "$binary" | grep -Fq "$path"; then
+        echo "$binary contains build-time path '$path'; expected portable runtime paths." >&2
+        exit 1
+      fi
+    done
+  done
 }
 
 sync_x265() {
@@ -390,6 +408,7 @@ write_build_info() {
     echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "configure_file=$CONFIG_FILE"
     echo "auto_skip_missing_deps=$AUTO_SKIP_MISSING_DEPS"
+    echo "alsa_config_dir=$ALSA_CONFIG_DIR"
     echo "extra_ffmpeg_flags=$EXTRA_FFMPEG_FLAGS"
   } >"$OUTPUT_DIR/build-info.txt"
 }
@@ -430,6 +449,8 @@ verify_binary() {
       }
     fi
   done
+
+  verify_no_build_paths
 
   log "Verifying required FFmpeg features"
   "$OUTPUT_DIR/ffmpeg" -hide_banner -devices | grep -Eq '^[[:space:]]*D[ E.]*[[:space:]]+alsa([[:space:]]|$)' || {

@@ -21,6 +21,9 @@ PKG_CONFIG_PATH_EXTRA="${PKG_CONFIG_PATH_EXTRA:-}"
 EXTRA_FFMPEG_FLAGS="${EXTRA_FFMPEG_FLAGS:-}"
 AUTO_SKIP_MISSING_DEPS="${AUTO_SKIP_MISSING_DEPS:-1}"
 ALSA_CONFIG_DIR="${ALSA_CONFIG_DIR:-/usr/share/alsa}"
+BUILD_BRAND="${BUILD_BRAND:-https://www.lkz.pub}"
+BUILD_TIMEZONE="${BUILD_TIMEZONE:-Asia/Shanghai}"
+BUILD_TIME="${BUILD_TIME:-$(TZ="$BUILD_TIMEZONE" date +%Y%m%d-%H%M%S-CST)}"
 REQUIRED_CONFIG_FLAGS=(
   --enable-alsa
   --enable-libsrt
@@ -362,6 +365,7 @@ build_ffmpeg() {
 
   local -a config_flags
   local -a target_flags
+  local extra_version="${BUILD_BRAND}-${BUILD_TIME}"
   local extra_ldflags="-L$OUTPUT_DIR/lib -static ${EXTRA_LDFLAGS:-}"
   local extra_libs="-lpthread -lm -ldl -lstdc++ -lssl -lcrypto -latomic ${EXTRA_LIBS:-}"
 
@@ -377,6 +381,7 @@ build_ffmpeg() {
       --extra-cflags="-I$OUTPUT_DIR/include ${EXTRA_CFLAGS:-}" \
       --extra-ldflags="$extra_ldflags" \
       --extra-libs="$extra_libs" \
+      --extra-version="$extra_version" \
       "${target_flags[@]}" \
       "${config_flags[@]}" \
       $EXTRA_FFMPEG_FLAGS
@@ -404,7 +409,10 @@ write_build_info() {
     echo "x265_commit=$(git -C "$WORK_DIR/x265" rev-parse HEAD)"
     echo "x265_describe=$(git -C "$WORK_DIR/x265" describe --tags --always --dirty 2>/dev/null || true)"
     echo "target=$TARGET"
-    echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "build_brand=$BUILD_BRAND"
+    echo "build_timezone=$BUILD_TIMEZONE"
+    echo "build_time=$BUILD_TIME"
+    echo "built_at=$(TZ="$BUILD_TIMEZONE" date +%Y-%m-%dT%H:%M:%S%z)"
     echo "configure_file=$CONFIG_FILE"
     echo "auto_skip_missing_deps=$AUTO_SKIP_MISSING_DEPS"
     echo "alsa_config_dir=$ALSA_CONFIG_DIR"

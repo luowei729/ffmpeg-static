@@ -63,6 +63,27 @@ pkg_for_flag() {
   esac
 }
 
+static_pkg_usable() {
+  local pkg="$1"
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+
+  if ! pkg-config --exists --static "$pkg"; then
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
+  if ! printf 'int main(void) { return 0; }\n' |
+    "${CC:-cc}" -x c - -o "$tmp_dir/probe" -static \
+      $(pkg-config --cflags --libs --static "$pkg") >/dev/null 2>&1; then
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
+  rm -rf "$tmp_dir"
+  return 0
+}
+
 read_config_flags() {
   local flags=()
   local flag pkg
@@ -74,7 +95,7 @@ read_config_flags() {
     [ -n "$flag" ] || continue
 
     pkg="$(pkg_for_flag "$flag" || true)"
-    if [ "$AUTO_SKIP_MISSING_DEPS" = "1" ] && [ -n "$pkg" ] && ! pkg-config --exists --static "$pkg"; then
+    if [ "$AUTO_SKIP_MISSING_DEPS" = "1" ] && [ -n "$pkg" ] && ! static_pkg_usable "$pkg"; then
       log "Skipping $flag because static pkg-config package '$pkg' was not usable"
       continue
     fi

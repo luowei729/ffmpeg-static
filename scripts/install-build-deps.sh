@@ -28,7 +28,9 @@ required_packages=(
   flex \
   git \
   libasound2-dev \
+  libdrm-dev \
   libtool \
+  libva-dev \
   meson \
   nasm \
   ninja-build \

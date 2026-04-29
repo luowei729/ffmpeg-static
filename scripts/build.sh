@@ -26,6 +26,7 @@ BUILD_TIMEZONE="${BUILD_TIMEZONE:-Asia/Shanghai}"
 BUILD_TIME="${BUILD_TIME:-$(TZ="$BUILD_TIMEZONE" date +%Y%m%d-%H%M%S-CST)}"
 REQUIRED_CONFIG_FLAGS=(
   --enable-alsa
+  --enable-vaapi
   --enable-libsrt
   --enable-libx264
   --enable-libx265
@@ -67,6 +68,7 @@ pkg_for_flag() {
     --enable-libtheora) echo "theora" ;;
     --enable-libvidstab) echo "vidstab" ;;
     --enable-libvo-amrwbenc) echo "vo-amrwbenc" ;;
+    --enable-vaapi) echo "libva" ;;
     --enable-libvorbis) echo "vorbis" ;;
     --enable-libvmaf) echo "libvmaf" ;;
     --enable-libvpx) echo "vpx" ;;
@@ -365,7 +367,7 @@ build_ffmpeg() {
 
   local -a config_flags
   local -a target_flags
-  local extra_version="${BUILD_BRAND}-${BUILD_TIME}"
+  local extra_version="${BUILD_BRAND} ${BUILD_TIME}"
   local extra_ldflags="-L$OUTPUT_DIR/lib -static ${EXTRA_LDFLAGS:-}"
   local extra_libs="-lpthread -lm -ldl -lstdc++ -lssl -lcrypto -latomic ${EXTRA_LIBS:-}"
 
@@ -474,6 +476,14 @@ verify_binary() {
   }
   "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*libx265[[:space:]]' || {
     echo "Missing required libx265 encoder." >&2
+    exit 1
+  }
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*h264_vaapi[[:space:]]' || {
+    echo "Missing required h264_vaapi encoder." >&2
+    exit 1
+  }
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*hevc_vaapi[[:space:]]' || {
+    echo "Missing required hevc_vaapi encoder." >&2
     exit 1
   }
 }

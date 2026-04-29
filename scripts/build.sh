@@ -10,6 +10,8 @@ FFMPEG_REPO="${FFMPEG_REPO:-https://git.ffmpeg.org/ffmpeg.git}"
 FFMPEG_REF="${FFMPEG_REF:-n8.1}"
 SRT_REPO="${SRT_REPO:-https://github.com/Haivision/srt.git}"
 SRT_REF="${SRT_REF:-v1.5.5}"
+ALSA_REPO="${ALSA_REPO:-https://github.com/alsa-project/alsa-lib.git}"
+ALSA_REF="${ALSA_REF:-v1.2.14}"
 TARGET="${TARGET:-linux-amd64}"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 2)}"
 CONFIG_FILE="${CONFIG_FILE:-$ROOT_DIR/config/ffmpeg.configure}"
@@ -159,6 +161,55 @@ sync_srt() {
   git -C "$srt_src_dir" checkout --force "$SRT_REF"
 }
 
+sync_alsa() {
+  local alsa_src_dir="$WORK_DIR/alsa-lib"
+
+  mkdir -p "$WORK_DIR"
+  if [ ! -d "$alsa_src_dir/.git" ]; then
+    log "Cloning ALSA from $ALSA_REPO"
+    git clone "$ALSA_REPO" "$alsa_src_dir"
+  fi
+
+  log "Fetching ALSA updates"
+  git -C "$alsa_src_dir" fetch --tags --prune origin
+
+  log "Checking out ALSA ref: $ALSA_REF"
+  git -C "$alsa_src_dir" checkout --force "$ALSA_REF"
+}
+
+build_alsa() {
+  local alsa_src_dir="$WORK_DIR/alsa-lib"
+  local alsa_build_dir="$WORK_DIR/build-alsa"
+
+  sync_alsa
+
+  rm -rf "$alsa_build_dir"
+  mkdir -p "$alsa_build_dir" "$OUTPUT_DIR"
+
+  log "Preparing static ALSA"
+  (
+    cd "$alsa_src_dir"
+    if [ ! -x ./configure ]; then
+      autoreconf -fi
+    fi
+  )
+
+  log "Configuring static ALSA"
+  (
+    cd "$alsa_build_dir"
+    "$alsa_src_dir/configure" \
+      --prefix="$OUTPUT_DIR" \
+      --disable-shared \
+      --enable-static
+  )
+
+  log "Compiling static ALSA with $JOBS jobs"
+  make -C "$alsa_build_dir" -j "$JOBS"
+
+  log "Installing static ALSA into $OUTPUT_DIR"
+  make -C "$alsa_build_dir" install
+}
+
 build_srt() {
   local srt_src_dir="$WORK_DIR/srt"
   local srt_build_dir="$WORK_DIR/build-srt"
@@ -224,6 +275,7 @@ build_ffmpeg() {
   rm -rf "$BUILD_DIR"
   mkdir -p "$BUILD_DIR"
 
+  build_alsa
   build_srt
 
   export PKG_CONFIG_PATH="$OUTPUT_DIR/lib/pkgconfig:$OUTPUT_DIR/lib64/pkgconfig:$PKG_CONFIG_PATH_EXTRA${PKG_CONFIG_PATH_EXTRA:+:}${PKG_CONFIG_PATH:-}"
@@ -265,6 +317,9 @@ write_build_info() {
     echo "srt_ref=$SRT_REF"
     echo "srt_commit=$(git -C "$WORK_DIR/srt" rev-parse HEAD)"
     echo "srt_describe=$(git -C "$WORK_DIR/srt" describe --tags --always --dirty 2>/dev/null || true)"
+    echo "alsa_ref=$ALSA_REF"
+    echo "alsa_commit=$(git -C "$WORK_DIR/alsa-lib" rev-parse HEAD)"
+    echo "alsa_describe=$(git -C "$WORK_DIR/alsa-lib" describe --tags --always --dirty 2>/dev/null || true)"
     echo "target=$TARGET"
     echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "configure_file=$CONFIG_FILE"

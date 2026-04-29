@@ -12,6 +12,8 @@ SRT_REPO="${SRT_REPO:-https://github.com/Haivision/srt.git}"
 SRT_REF="${SRT_REF:-v1.5.5}"
 ALSA_REPO="${ALSA_REPO:-https://github.com/alsa-project/alsa-lib.git}"
 ALSA_REF="${ALSA_REF:-v1.2.14}"
+X265_REPO="${X265_REPO:-https://bitbucket.org/multicoreware/x265_git.git}"
+X265_REF="${X265_REF:-4.1}"
 TARGET="${TARGET:-linux-amd64}"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 2)}"
 CONFIG_FILE="${CONFIG_FILE:-$ROOT_DIR/config/ffmpeg.configure}"
@@ -22,6 +24,7 @@ REQUIRED_CONFIG_FLAGS=(
   --enable-alsa
   --enable-libsrt
   --enable-libx264
+  --enable-libx265
 )
 
 log() {
@@ -210,6 +213,65 @@ build_alsa() {
   make -C "$alsa_build_dir" install
 }
 
+sync_x265() {
+  local x265_src_dir="$WORK_DIR/x265"
+
+  mkdir -p "$WORK_DIR"
+  if [ ! -d "$x265_src_dir/.git" ]; then
+    log "Cloning x265 from $X265_REPO"
+    git clone "$X265_REPO" "$x265_src_dir"
+  fi
+
+  log "Fetching x265 updates"
+  git -C "$x265_src_dir" fetch --tags --prune origin
+
+  log "Checking out x265 ref: $X265_REF"
+  git -C "$x265_src_dir" checkout --force "$X265_REF"
+}
+
+patch_x265_pkg_config() {
+  local pc_file="$OUTPUT_DIR/lib/pkgconfig/x265.pc"
+  local private_libs="-lstdc++ -lpthread -ldl"
+
+  [ -f "$pc_file" ] || return 0
+
+  log "Patching pkg-config metadata: $pc_file"
+  if grep -q '^Libs\.private:' "$pc_file"; then
+    perl -0pi -e 's/^Libs\.private:\s*.*$/Libs.private: -lstdc++ -lpthread -ldl/m' "$pc_file"
+  else
+    printf '\nLibs.private: %s\n' "$private_libs" >>"$pc_file"
+  fi
+}
+
+build_x265() {
+  local x265_src_dir="$WORK_DIR/x265"
+  local x265_build_dir="$WORK_DIR/build-x265"
+
+  sync_x265
+
+  rm -rf "$x265_build_dir"
+  mkdir -p "$x265_build_dir" "$OUTPUT_DIR"
+
+  log "Configuring static x265"
+  cmake -S "$x265_src_dir/source" -B "$x265_build_dir" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$OUTPUT_DIR" \
+    -DENABLE_SHARED=OFF \
+    -DENABLE_CLI=OFF \
+    -DENABLE_PIC=ON \
+    -DENABLE_LIBNUMA=OFF \
+    -DHIGH_BIT_DEPTH=OFF \
+    -DMAIN12=OFF
+
+  log "Compiling static x265 with $JOBS jobs"
+  cmake --build "$x265_build_dir" --parallel "$JOBS"
+
+  log "Installing static x265 into $OUTPUT_DIR"
+  cmake --install "$x265_build_dir"
+
+  patch_x265_pkg_config
+}
+
 build_srt() {
   local srt_src_dir="$WORK_DIR/srt"
   local srt_build_dir="$WORK_DIR/build-srt"
@@ -277,6 +339,7 @@ build_ffmpeg() {
 
   build_alsa
   build_srt
+  build_x265
 
   export PKG_CONFIG_PATH="$OUTPUT_DIR/lib/pkgconfig:$OUTPUT_DIR/lib64/pkgconfig:$PKG_CONFIG_PATH_EXTRA${PKG_CONFIG_PATH_EXTRA:+:}${PKG_CONFIG_PATH:-}"
 
@@ -320,6 +383,9 @@ write_build_info() {
     echo "alsa_ref=$ALSA_REF"
     echo "alsa_commit=$(git -C "$WORK_DIR/alsa-lib" rev-parse HEAD)"
     echo "alsa_describe=$(git -C "$WORK_DIR/alsa-lib" describe --tags --always --dirty 2>/dev/null || true)"
+    echo "x265_ref=$X265_REF"
+    echo "x265_commit=$(git -C "$WORK_DIR/x265" rev-parse HEAD)"
+    echo "x265_describe=$(git -C "$WORK_DIR/x265" describe --tags --always --dirty 2>/dev/null || true)"
     echo "target=$TARGET"
     echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "configure_file=$CONFIG_FILE"
@@ -366,7 +432,7 @@ verify_binary() {
   done
 
   log "Verifying required FFmpeg features"
-  "$OUTPUT_DIR/ffmpeg" -hide_banner -formats | grep -Eq '^ D[[:space:]]+alsa[[:space:]]' || {
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -devices | grep -Eq '^[[:space:]]*D[ E.]*[[:space:]]+alsa([[:space:]]|$)' || {
     echo "Missing required ALSA input format; expected '-f alsa' to be available." >&2
     exit 1
   }
@@ -376,6 +442,10 @@ verify_binary() {
   }
   "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*libx264[[:space:]]' || {
     echo "Missing required libx264 encoder." >&2
+    exit 1
+  }
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*libx265[[:space:]]' || {
+    echo "Missing required libx265 encoder." >&2
     exit 1
   }
 }

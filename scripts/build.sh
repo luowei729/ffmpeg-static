@@ -14,6 +14,11 @@ CONFIG_FILE="${CONFIG_FILE:-$ROOT_DIR/config/ffmpeg.configure}"
 PKG_CONFIG_PATH_EXTRA="${PKG_CONFIG_PATH_EXTRA:-}"
 EXTRA_FFMPEG_FLAGS="${EXTRA_FFMPEG_FLAGS:-}"
 AUTO_SKIP_MISSING_DEPS="${AUTO_SKIP_MISSING_DEPS:-1}"
+REQUIRED_CONFIG_FLAGS=(
+  --enable-alsa
+  --enable-libsrt
+  --enable-libx264
+)
 
 log() {
   printf '[ffmpeg-static] %s\n' "$*" >&2
@@ -84,6 +89,19 @@ static_pkg_usable() {
   return 0
 }
 
+is_required_config_flag() {
+  local flag="$1"
+  local required
+
+  for required in "${REQUIRED_CONFIG_FLAGS[@]}"; do
+    if [ "$flag" = "$required" ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 read_config_flags() {
   local flags=()
   local flag pkg
@@ -95,7 +113,7 @@ read_config_flags() {
     [ -n "$flag" ] || continue
 
     pkg="$(pkg_for_flag "$flag" || true)"
-    if [ "$AUTO_SKIP_MISSING_DEPS" = "1" ] && [ -n "$pkg" ] && ! static_pkg_usable "$pkg"; then
+    if [ "$AUTO_SKIP_MISSING_DEPS" = "1" ] && [ -n "$pkg" ] && ! is_required_config_flag "$flag" && ! static_pkg_usable "$pkg"; then
       log "Skipping $flag because static pkg-config package '$pkg' was not usable"
       continue
     fi
@@ -220,6 +238,20 @@ verify_binary() {
       }
     fi
   done
+
+  log "Verifying required FFmpeg features"
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -formats | grep -Eq '^ D[[:space:]]+alsa[[:space:]]' || {
+    echo "Missing required ALSA input format; expected '-f alsa' to be available." >&2
+    exit 1
+  }
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -protocols | grep -Eq '^[[:space:]]*srt$' || {
+    echo "Missing required SRT protocol; expected 'srt://' to be available." >&2
+    exit 1
+  }
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*libx264[[:space:]]' || {
+    echo "Missing required libx264 encoder." >&2
+    exit 1
+  }
 }
 
 main() {

@@ -109,3 +109,5 @@ AUTO_SKIP_MISSING_DEPS=0 ./scripts/build.sh
 Linux 目标使用完整配置，包含 ALSA。
 
 Release 包会包含完整安装目录：全静态 `ffmpeg` / `ffprobe`、FFmpeg headers、`libav*.a` 静态库和 pkg-config 文件。构建脚本会用 `readelf` / `ldd` 校验 `ffmpeg` 和 `ffprobe`，如果发现动态解释器或动态 `NEEDED` 依赖会直接失败。
+
+`alsa`、`libsrt` 和 `libx264` 是必选能力，不会被自动跳过。构建结束会检查 `-f alsa`、`srt://` 和 `libx264` 是否可用。

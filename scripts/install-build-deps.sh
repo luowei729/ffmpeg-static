@@ -27,6 +27,7 @@ required_packages=(
   file \
   flex \
   git \
+  libasound2-dev \
   libtool \
   meson \
   nasm \
@@ -42,7 +43,6 @@ optional_packages=(
   frei0r-plugins-dev \
   gh \
   libaom-dev \
-  libasound2-dev \
   libass-dev \
   libdav1d-dev \
   libfontconfig-dev \

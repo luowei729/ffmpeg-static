@@ -523,6 +523,51 @@ verify_binary_linkage() {
   fi
 }
 
+copy_runtime_libraries() {
+  local binary
+  local lib_path
+  local lib_name
+  local runtime_dir="$OUTPUT_DIR/lib"
+
+  [ "$FULLY_STATIC" != "1" ] || return 0
+
+  mkdir -p "$runtime_dir"
+
+  for binary in "$OUTPUT_DIR/bin/ffmpeg" "$OUTPUT_DIR/bin/ffprobe"; do
+    log "Collecting runtime shared libraries for $binary"
+    while IFS= read -r lib_path; do
+      [ -n "$lib_path" ] || continue
+      [ -f "$lib_path" ] || continue
+
+      lib_name="$(basename "$lib_path")"
+      case "$lib_name" in
+        ld-linux-*|ld-musl-*|libc.so.*|libdl.so.*|libm.so.*|libpthread.so.*|libresolv.so.*|librt.so.*)
+          continue
+          ;;
+      esac
+
+      if [ ! -e "$runtime_dir/$lib_name" ]; then
+        cp -L "$lib_path" "$runtime_dir/$lib_name"
+      fi
+    done < <(ldd "$binary" | awk '
+      /=>/ && $3 ~ /^\// { print $3 }
+      !/=>/ && $1 ~ /^\// { print $1 }
+    ')
+  done
+}
+
+set_runtime_rpath() {
+  [ "$FULLY_STATIC" != "1" ] || return 0
+
+  require_cmd patchelf
+
+  log "Setting runtime library search paths"
+  patchelf --set-rpath '$ORIGIN/../lib' "$OUTPUT_DIR/bin/ffmpeg"
+  patchelf --set-rpath '$ORIGIN/../lib' "$OUTPUT_DIR/bin/ffprobe"
+  patchelf --set-rpath '$ORIGIN/lib' "$OUTPUT_DIR/ffmpeg"
+  patchelf --set-rpath '$ORIGIN/lib' "$OUTPUT_DIR/ffprobe"
+}
+
 sync_x265() {
   local x265_src_dir="$WORK_DIR/x265"
 
@@ -755,6 +800,8 @@ verify_binary() {
 
   cp -f "$OUTPUT_DIR/bin/ffmpeg" "$OUTPUT_DIR/ffmpeg"
   cp -f "$OUTPUT_DIR/bin/ffprobe" "$OUTPUT_DIR/ffprobe"
+  copy_runtime_libraries
+  set_runtime_rpath
 
   log "Built binary:"
   "$OUTPUT_DIR/ffmpeg" -hide_banner -version | sed -n '1,4p'

@@ -421,6 +421,20 @@ verify_libva_runtime_path() {
   done
 }
 
+verify_required_encoder() {
+  local encoder="$1"
+
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq "^[[:space:]]*V.*$encoder[[:space:]]" || {
+    echo "Missing required $encoder encoder." >&2
+    exit 1
+  }
+
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -h "encoder=$encoder" >/dev/null || {
+    echo "Required encoder $encoder is listed but encoder help could not be queried." >&2
+    exit 1
+  }
+}
+
 sync_x265() {
   local x265_src_dir="$WORK_DIR/x265"
 
@@ -671,22 +685,10 @@ verify_binary() {
     echo "Missing required SRT protocol; expected 'srt://' to be available." >&2
     exit 1
   }
-  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*libx264[[:space:]]' || {
-    echo "Missing required libx264 encoder." >&2
-    exit 1
-  }
-  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*libx265[[:space:]]' || {
-    echo "Missing required libx265 encoder." >&2
-    exit 1
-  }
-  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*h264_vaapi[[:space:]]' || {
-    echo "Missing required h264_vaapi encoder." >&2
-    exit 1
-  }
-  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*hevc_vaapi[[:space:]]' || {
-    echo "Missing required hevc_vaapi encoder." >&2
-    exit 1
-  }
+  verify_required_encoder libx264
+  verify_required_encoder libx265
+  verify_required_encoder h264_vaapi
+  verify_required_encoder hevc_vaapi
 }
 
 main() {

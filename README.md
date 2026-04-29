@@ -5,6 +5,7 @@
 - AAC: FFmpeg 原生 AAC 编码/解码
 - H.264: `libx264`
 - H.265/HEVC: `libx265`
+- VAAPI: AMD/Intel 核显硬件编码，验证 `h264_vaapi` / `hevc_vaapi`
 - RTMP: FFmpeg 原生 RTMP 协议，可选 `librtmp`
 - SRT: `libsrt`
 - ALSA: `libasound`
@@ -100,7 +101,9 @@ AUTO_SKIP_MISSING_DEPS=0 ./scripts/build.sh
 ```bash
 ./dist/ffmpeg -version
 ./dist/ffmpeg -protocols | grep -E 'rtmp|srt'
-./dist/ffmpeg -encoders | grep -E 'libx264|libx265|aac'
+./dist/ffmpeg -encoders | grep -E 'libx264|libx265|h264_vaapi|hevc_vaapi|aac'
+./dist/ffmpeg -h encoder=h264_vaapi
+./dist/ffmpeg -h encoder=hevc_vaapi
 ```
 
 ## GitHub Actions Release
@@ -112,8 +115,8 @@ AUTO_SKIP_MISSING_DEPS=0 ./scripts/build.sh
 - 构建环境：不使用 Docker，全部使用 Ubuntu 24.04 runner
 - 产物目标：`linux-amd64`、`linux-arm64`
 
-Linux 目标使用完整配置，包含 ALSA。
+Linux 目标使用完整配置，包含 ALSA 和 VAAPI。AMD R7 8745H/8745HS 等 AMD 核显运行时需要系统侧 Mesa VAAPI 驱动可用，常见驱动文件是 `radeonsi_drv_video.so`。
 
 Release 包会包含完整安装目录：全静态 `ffmpeg` / `ffprobe`、FFmpeg headers、`libav*.a` 静态库和 pkg-config 文件。构建脚本会用 `readelf` / `ldd` 校验 `ffmpeg` 和 `ffprobe`，如果发现动态解释器或动态 `NEEDED` 依赖会直接失败。
 
-`alsa`、`libsrt` 和 `libx264` 是必选能力，不会被自动跳过。构建结束会检查 `-f alsa`、`srt://` 和 `libx264` 是否可用。
+`alsa`、`libsrt`、`libx264`、`libx265` 和 `vaapi` 是必选能力，不会被自动跳过。构建结束会检查 `-f alsa`、`srt://`、`libx264`、`libx265`、`h264_vaapi` 和 `hevc_vaapi` 是否可用。

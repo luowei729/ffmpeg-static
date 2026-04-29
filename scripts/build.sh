@@ -487,7 +487,7 @@ build_ffmpeg() {
   log "Configuring FFmpeg"
   (
     cd "$BUILD_DIR"
-    "$SRC_DIR/configure" \
+    if ! "$SRC_DIR/configure" \
       --prefix="$OUTPUT_DIR" \
       --pkg-config-flags="--static" \
       --extra-cflags="-I$OUTPUT_DIR/include ${EXTRA_CFLAGS:-}" \
@@ -496,7 +496,13 @@ build_ffmpeg() {
       --extra-version="$extra_version" \
       "${target_flags[@]}" \
       "${config_flags[@]}" \
-      $EXTRA_FFMPEG_FLAGS
+      $EXTRA_FFMPEG_FLAGS; then
+      if [ -f ffbuild/config.log ]; then
+        echo "--- ffbuild/config.log tail ---" >&2
+        tail -200 ffbuild/config.log >&2
+      fi
+      exit 1
+    fi
   )
 
   log "Compiling FFmpeg with $JOBS jobs"

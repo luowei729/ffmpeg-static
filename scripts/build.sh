@@ -47,6 +47,24 @@ require_cmd() {
   fi
 }
 
+git_clone() {
+  local repo="$1"
+  local dest="$2"
+  local attempt
+
+  for attempt in 1 2 3; do
+    if git clone --depth 1 "$repo" "$dest"; then
+      return 0
+    fi
+
+    rm -rf "$dest"
+    log "Clone failed for $repo (attempt $attempt); retrying"
+    sleep $((attempt * 5))
+  done
+
+  git clone "$repo" "$dest"
+}
+
 pkg_for_flag() {
   case "$1" in
     --enable-alsa) echo "alsa" ;;
@@ -145,7 +163,7 @@ sync_ffmpeg() {
   mkdir -p "$WORK_DIR"
   if [ ! -d "$SRC_DIR/.git" ]; then
     log "Cloning FFmpeg from $FFMPEG_REPO"
-    git clone "$FFMPEG_REPO" "$SRC_DIR"
+    git_clone "$FFMPEG_REPO" "$SRC_DIR"
   fi
 
   log "Fetching FFmpeg updates"
@@ -164,7 +182,7 @@ sync_srt() {
   mkdir -p "$WORK_DIR"
   if [ ! -d "$srt_src_dir/.git" ]; then
     log "Cloning SRT from $SRT_REPO"
-    git clone "$SRT_REPO" "$srt_src_dir"
+    git_clone "$SRT_REPO" "$srt_src_dir"
   fi
 
   log "Fetching SRT updates"
@@ -180,7 +198,7 @@ sync_alsa() {
   mkdir -p "$WORK_DIR"
   if [ ! -d "$alsa_src_dir/.git" ]; then
     log "Cloning ALSA from $ALSA_REPO"
-    git clone "$ALSA_REPO" "$alsa_src_dir"
+    git_clone "$ALSA_REPO" "$alsa_src_dir"
   fi
 
   log "Fetching ALSA updates"
@@ -230,7 +248,7 @@ sync_libdrm() {
   mkdir -p "$WORK_DIR"
   if [ ! -d "$libdrm_src_dir/.git" ]; then
     log "Cloning libdrm from $LIBDRM_REPO"
-    git clone "$LIBDRM_REPO" "$libdrm_src_dir"
+    git_clone "$LIBDRM_REPO" "$libdrm_src_dir"
   fi
 
   log "Fetching libdrm updates"
@@ -274,7 +292,7 @@ sync_libva() {
   mkdir -p "$WORK_DIR"
   if [ ! -d "$libva_src_dir/.git" ]; then
     log "Cloning libva from $LIBVA_REPO"
-    git clone "$LIBVA_REPO" "$libva_src_dir"
+    git_clone "$LIBVA_REPO" "$libva_src_dir"
   fi
 
   log "Fetching libva updates"
@@ -309,21 +327,30 @@ build_libva() {
   rm -rf "$libva_build_dir"
   mkdir -p "$libva_build_dir" "$OUTPUT_DIR"
 
+  log "Preparing static libva"
+  (
+    cd "$libva_src_dir"
+    NOCONFIGURE=1 ./autogen.sh
+  )
+
   log "Configuring static libva"
-  meson setup "$libva_build_dir" "$libva_src_dir" \
-    --prefix="$OUTPUT_DIR" \
-    --libdir=lib \
-    --default-library=static \
-    --buildtype=release \
-    -Dwith_x11=no \
-    -Dwith_wayland=no \
-    -Dwith_glx=no
+  (
+    cd "$libva_build_dir"
+    "$libva_src_dir/configure" \
+      --prefix="$OUTPUT_DIR" \
+      --libdir="$OUTPUT_DIR/lib" \
+      --enable-static \
+      --disable-shared \
+      --disable-x11 \
+      --disable-glx \
+      --disable-wayland
+  )
 
   log "Compiling static libva with $JOBS jobs"
-  meson compile -C "$libva_build_dir" -j "$JOBS"
+  make -C "$libva_build_dir" -j "$JOBS"
 
   log "Installing static libva into $OUTPUT_DIR"
-  meson install -C "$libva_build_dir"
+  make -C "$libva_build_dir" install
 
   patch_libva_pkg_config
 }
@@ -349,7 +376,7 @@ sync_x265() {
   mkdir -p "$WORK_DIR"
   if [ ! -d "$x265_src_dir/.git" ]; then
     log "Cloning x265 from $X265_REPO"
-    git clone "$X265_REPO" "$x265_src_dir"
+    git_clone "$X265_REPO" "$x265_src_dir"
   fi
 
   log "Fetching x265 updates"

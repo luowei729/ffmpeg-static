@@ -315,7 +315,6 @@ build_libva() {
     --libdir=lib \
     --default-library=static \
     --buildtype=release \
-    -Dwith_drm=yes \
     -Dwith_x11=no \
     -Dwith_wayland=no \
     -Dwith_glx=no

@@ -77,6 +77,7 @@ EXTRA_FFMPEG_FLAGS="--enable-nonfree --enable-libfdk-aac" ./scripts/build.sh
 --enable-libx264 --enable-libx265 --enable-libsrt --enable-libvpx
 --enable-libaom --enable-libdav1d --enable-libopus --enable-libvorbis
 --enable-libmp3lame --enable-libass --enable-libfreetype --enable-fontconfig
+--enable-openssl
 ```
 
 有些库在不同发行版上静态链接支持不一致。默认情况下，脚本会通过 `pkg-config` 自动跳过当前环境缺少的可选库，尽量保证能出包。若要严格要求完整配置，可使用：
@@ -100,6 +101,6 @@ AUTO_SKIP_MISSING_DEPS=0 ./scripts/build.sh
 - 自动发布：push `v*` tag 时自动构建并上传 Release 资产
 - 手动发布：Actions 页面运行 `Build FFmpeg Static Releases`
 - 构建环境：不使用 Docker，全部使用 Ubuntu 24.04 runner
-- 产物目标：`linux-amd64`、`linux-arm64`、`win-amd64`、`win-arm64`
+- 产物目标：`linux-amd64`、`linux-arm64`
 
-Linux 目标使用完整配置，包含 ALSA。Windows 目标使用 [config/ffmpeg.windows.configure](config/ffmpeg.windows.configure)，在 Ubuntu 24.04 上通过 llvm-mingw 交叉编译。
+Linux 目标使用完整配置，包含 ALSA。

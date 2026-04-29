@@ -14,7 +14,6 @@ CONFIG_FILE="${CONFIG_FILE:-$ROOT_DIR/config/ffmpeg.configure}"
 PKG_CONFIG_PATH_EXTRA="${PKG_CONFIG_PATH_EXTRA:-}"
 EXTRA_FFMPEG_FLAGS="${EXTRA_FFMPEG_FLAGS:-}"
 AUTO_SKIP_MISSING_DEPS="${AUTO_SKIP_MISSING_DEPS:-1}"
-LLVM_MINGW_DIR="${LLVM_MINGW_DIR:-$WORK_DIR/toolchains/llvm-mingw}"
 
 log() {
   printf '[ffmpeg-static] %s\n' "$*" >&2
@@ -32,15 +31,14 @@ pkg_for_flag() {
     --enable-alsa) echo "alsa" ;;
     --enable-fontconfig) echo "fontconfig" ;;
     --enable-frei0r) echo "frei0r" ;;
-    --enable-gnutls) echo "gnutls" ;;
     --enable-gmp) echo "gmp" ;;
+    --enable-openssl) echo "openssl" ;;
     --enable-libaom) echo "aom" ;;
     --enable-libass) echo "libass" ;;
     --enable-libdav1d) echo "dav1d" ;;
     --enable-libfribidi) echo "fribidi" ;;
     --enable-libfreetype) echo "freetype2" ;;
     --enable-libgme) echo "libgme" ;;
-    --enable-libmp3lame) echo "libmp3lame" ;;
     --enable-libopencore-amrnb) echo "opencore-amrnb" ;;
     --enable-libopencore-amrwb) echo "opencore-amrwb" ;;
     --enable-libopenjpeg) echo "libopenjp2" ;;
@@ -60,7 +58,6 @@ pkg_for_flag() {
     --enable-libx264) echo "x264" ;;
     --enable-libx265) echo "x265" ;;
     --enable-libxml2) echo "libxml-2.0" ;;
-    --enable-libxvid) echo "xvid" ;;
     --enable-libzimg) echo "zimg" ;;
     --enable-libzvbi) echo "zvbi-0.2" ;;
   esac
@@ -77,8 +74,8 @@ read_config_flags() {
     [ -n "$flag" ] || continue
 
     pkg="$(pkg_for_flag "$flag" || true)"
-    if [ "$AUTO_SKIP_MISSING_DEPS" = "1" ] && [ -n "$pkg" ] && ! pkg-config --exists "$pkg"; then
-      log "Skipping $flag because pkg-config package '$pkg' was not found"
+    if [ "$AUTO_SKIP_MISSING_DEPS" = "1" ] && [ -n "$pkg" ] && ! pkg-config --exists --static "$pkg"; then
+      log "Skipping $flag because static pkg-config package '$pkg' was not usable"
       continue
     fi
 
@@ -110,22 +107,6 @@ target_configure_flags() {
     linux-amd64|linux-arm64)
       return 0
       ;;
-    win-amd64)
-      echo "--target-os=mingw32"
-      echo "--arch=x86_64"
-      echo "--cross-prefix=$LLVM_MINGW_DIR/bin/x86_64-w64-mingw32-"
-      echo "--cc=$LLVM_MINGW_DIR/bin/x86_64-w64-mingw32-clang"
-      echo "--cxx=$LLVM_MINGW_DIR/bin/x86_64-w64-mingw32-clang++"
-      echo "--pkg-config=false"
-      ;;
-    win-arm64)
-      echo "--target-os=mingw32"
-      echo "--arch=aarch64"
-      echo "--cross-prefix=$LLVM_MINGW_DIR/bin/aarch64-w64-mingw32-"
-      echo "--cc=$LLVM_MINGW_DIR/bin/aarch64-w64-mingw32-clang"
-      echo "--cxx=$LLVM_MINGW_DIR/bin/aarch64-w64-mingw32-clang++"
-      echo "--pkg-config=false"
-      ;;
     *)
       echo "Unsupported TARGET=$TARGET" >&2
       exit 1
@@ -144,11 +125,6 @@ build_ffmpeg() {
   local -a target_flags
   local extra_ldflags="-L$OUTPUT_DIR/lib -static ${EXTRA_LDFLAGS:-}"
   local extra_libs="-lpthread -lm -ldl ${EXTRA_LIBS:-}"
-
-  if [[ "$TARGET" == win-* ]]; then
-    extra_ldflags="-L$OUTPUT_DIR/lib -static -static-libgcc ${EXTRA_LDFLAGS:-}"
-    extra_libs="${EXTRA_LIBS:-}"
-  fi
 
   mapfile -t config_flags < <(read_config_flags)
   mapfile -t target_flags < <(target_configure_flags)
@@ -188,27 +164,18 @@ write_build_info() {
 }
 
 verify_binary() {
-  local exe_suffix=""
-  if [[ "$TARGET" == win-* ]]; then
-    exe_suffix=".exe"
-  fi
-
-  if [ ! -x "$OUTPUT_DIR/bin/ffmpeg$exe_suffix" ]; then
-    echo "Build finished but $OUTPUT_DIR/bin/ffmpeg$exe_suffix was not found." >&2
+  if [ ! -x "$OUTPUT_DIR/bin/ffmpeg" ]; then
+    echo "Build finished but $OUTPUT_DIR/bin/ffmpeg was not found." >&2
     exit 1
   fi
 
-  cp -f "$OUTPUT_DIR/bin/ffmpeg$exe_suffix" "$OUTPUT_DIR/ffmpeg$exe_suffix"
-  cp -f "$OUTPUT_DIR/bin/ffprobe$exe_suffix" "$OUTPUT_DIR/ffprobe$exe_suffix"
+  cp -f "$OUTPUT_DIR/bin/ffmpeg" "$OUTPUT_DIR/ffmpeg"
+  cp -f "$OUTPUT_DIR/bin/ffprobe" "$OUTPUT_DIR/ffprobe"
 
   log "Built binary:"
-  if [[ "$TARGET" != win-* ]]; then
-    "$OUTPUT_DIR/ffmpeg" -hide_banner -version | sed -n '1,4p'
-  else
-    file "$OUTPUT_DIR/ffmpeg$exe_suffix" || true
-  fi
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -version | sed -n '1,4p'
 
-  if [[ "$TARGET" != win-* ]] && command -v ldd >/dev/null 2>&1; then
+  if command -v ldd >/dev/null 2>&1; then
     log "Static link check:"
     ldd "$OUTPUT_DIR/ffmpeg" || true
   fi

@@ -11,7 +11,7 @@
 --enable-pthreads
 --enable-fontconfig
 --enable-frei0r
---enable-gnutls
+--enable-openssl
 --enable-gmp
 --enable-libgme
 --enable-gray

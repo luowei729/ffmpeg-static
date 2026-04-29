@@ -28,19 +28,9 @@ jobs:
           - target: linux-amd64
             runs_on: '"ubuntu-24.04"'
             config_file: config/ffmpeg.configure
-            package_ext: tar.gz
           - target: linux-arm64
             runs_on: '"ubuntu-24.04-arm"'
             config_file: config/ffmpeg.configure
-            package_ext: tar.gz
-          - target: win-amd64
-            runs_on: '"ubuntu-24.04"'
-            config_file: config/ffmpeg.windows.configure
-            package_ext: zip
-          - target: win-arm64
-            runs_on: '"ubuntu-24.04"'
-            config_file: config/ffmpeg.windows.configure
-            package_ext: zip
 
     runs-on: ${{ fromJSON(matrix.runs_on) }}
 
@@ -50,10 +40,6 @@ jobs:
 
       - name: Install build dependencies
         run: sudo ./scripts/install-build-deps.sh
-
-      - name: Install llvm-mingw for Windows targets
-        if: startsWith(matrix.target, 'win-')
-        run: ./scripts/install-llvm-mingw.sh "$PWD/work/toolchains/llvm-mingw"
 
       - name: Build
         env:
@@ -78,13 +64,8 @@ jobs:
           cp -f "dist/${{ matrix.target }}"/ffmpeg* "$staging/"
           cp -f "dist/${{ matrix.target }}"/ffprobe* "$staging/"
           cp -f "dist/${{ matrix.target }}/build-info.txt" "$staging/"
-          if [ "${{ matrix.package_ext }}" = "zip" ]; then
-            (cd artifacts && zip -r "$name.zip" "$name")
-            echo "asset=artifacts/$name.zip" >> "$GITHUB_OUTPUT"
-          else
-            tar -C artifacts -czf "artifacts/$name.tar.gz" "$name"
-            echo "asset=artifacts/$name.tar.gz" >> "$GITHUB_OUTPUT"
-          fi
+          tar -C artifacts -czf "artifacts/$name.tar.gz" "$name"
+          echo "asset=artifacts/$name.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

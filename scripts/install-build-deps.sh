@@ -33,9 +33,7 @@ required_packages=(
   ninja-build \
   pkg-config \
   texinfo \
-  unzip \
   wget \
-  xz-utils \
   yasm \
   zlib1g-dev
 )
@@ -52,7 +50,6 @@ optional_packages=(
   libfribidi-dev \
   libgme-dev \
   libgmp-dev \
-  libgnutls28-dev \
   libmp3lame-dev \
   libopencore-amrnb-dev \
   libopencore-amrwb-dev \

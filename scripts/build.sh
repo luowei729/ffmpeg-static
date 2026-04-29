@@ -52,14 +52,18 @@ git_clone() {
   local dest="$2"
   local attempt
 
-  for attempt in 1 2 3; do
+  if echo "$repo" | grep -q 'gitlab\.freedesktop\.org'; then
+    git config --global http.version HTTP/1.1 >/dev/null 2>&1 || true
+  fi
+
+  for attempt in 1 2 3 4 5; do
     if git clone --depth 1 "$repo" "$dest"; then
       return 0
     fi
 
     rm -rf "$dest"
     log "Clone failed for $repo (attempt $attempt); retrying"
-    sleep $((attempt * 5))
+    sleep $((attempt * 8))
   done
 
   git clone "$repo" "$dest"

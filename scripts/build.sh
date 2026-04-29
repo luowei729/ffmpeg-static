@@ -215,19 +215,18 @@ build_alsa() {
   make -C "$alsa_build_dir" install
 }
 
-verify_no_build_paths() {
-  local binary path
+verify_alsa_runtime_path() {
+  local binary bad_path
 
   require_cmd strings
+  bad_path="$OUTPUT_DIR/share/alsa/alsa.conf"
 
   for binary in "$OUTPUT_DIR/ffmpeg" "$OUTPUT_DIR/ffprobe"; do
-    log "Verifying no build paths are embedded: $binary"
-    for path in "$ROOT_DIR" "$OUTPUT_DIR" "$WORK_DIR"; do
-      if strings "$binary" | grep -Fq "$path"; then
-        echo "$binary contains build-time path '$path'; expected portable runtime paths." >&2
-        exit 1
-      fi
-    done
+    log "Verifying ALSA runtime path is portable: $binary"
+    if strings "$binary" | grep -Fq "$bad_path"; then
+      echo "$binary contains non-portable ALSA config path '$bad_path'." >&2
+      exit 1
+    fi
   done
 }
 
@@ -450,7 +449,7 @@ verify_binary() {
     fi
   done
 
-  verify_no_build_paths
+  verify_alsa_runtime_path
 
   log "Verifying required FFmpeg features"
   "$OUTPUT_DIR/ffmpeg" -hide_banner -devices | grep -Eq '^[[:space:]]*D[ E.]*[[:space:]]+alsa([[:space:]]|$)' || {

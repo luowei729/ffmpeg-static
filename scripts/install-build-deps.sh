@@ -34,7 +34,6 @@ required_packages=(
   meson \
   nasm \
   ninja-build \
-  patchelf \
   pkg-config \
   texinfo \
   wget \

@@ -1,11 +1,10 @@
 # ffmpeg-static
 
-用于同步并编译最新 FFmpeg 版本的项目。默认目标是 Linux x86_64 VAAPI 可用的 `ffmpeg` / `ffprobe`，FFmpeg 自身库使用静态配置，VAAPI 运行时库保持动态链接，并补充常用能力：
+用于同步并编译最新 FFmpeg 静态版本的项目。默认目标是 Linux x86_64 静态 `ffmpeg` / `ffprobe`，并补充常用能力：
 
 - AAC: FFmpeg 原生 AAC 编码/解码
 - H.264: `libx264`
 - H.265/HEVC: `libx265`
-- VAAPI: AMD/Intel 核显硬件编码，验证 `h264_vaapi` / `hevc_vaapi`
 - RTMP: FFmpeg 原生 RTMP 协议，可选 `librtmp`
 - SRT: `libsrt`
 - ALSA: `libasound`
@@ -96,16 +95,12 @@ EXTRA_FFMPEG_FLAGS="--enable-nonfree --enable-libfdk-aac" ./scripts/build.sh
 AUTO_SKIP_MISSING_DEPS=0 ./scripts/build.sh
 ```
 
-VAAPI 依赖 `libva` 在运行时 `dlopen()` 加载 GPU 驱动，不能做成全静态 ELF。默认构建会动态链接 `libva` / `libva-drm`，通过 `ldd` 确认可解析到 `libdrm`，并把运行时依赖的共享库收集到 Release 包的 `lib/` 目录；`ffmpeg` / `ffprobe` 会写入相对 rpath，直接 `./ffmpeg` 运行时可找到随包库。如果设置 `FULLY_STATIC=1` 且仍启用 `--enable-vaapi`，脚本会直接失败，避免生成运行时容易崩溃的二进制。
-
 ## 验证
 
 ```bash
 ./dist/ffmpeg -version
 ./dist/ffmpeg -protocols | grep -E 'rtmp|srt'
-./dist/ffmpeg -encoders | grep -E 'libx264|libx265|h264_vaapi|hevc_vaapi|aac'
-./dist/ffmpeg -h encoder=h264_vaapi
-./dist/ffmpeg -h encoder=hevc_vaapi
+./dist/ffmpeg -encoders | grep -E 'libx264|libx265|aac'
 ```
 
 ## GitHub Actions Release
@@ -114,11 +109,11 @@ VAAPI 依赖 `libva` 在运行时 `dlopen()` 加载 GPU 驱动，不能做成全
 
 - 自动发布：push `v*` tag 时自动构建并上传 Release 资产
 - 手动发布：Actions 页面运行 `Build FFmpeg Static Releases`
-- 构建环境：不使用 Docker，`linux-amd64` 使用 Ubuntu 22.04 runner 以兼容 glibc 2.35，`linux-arm64` 使用 Ubuntu 24.04 ARM runner
+- 构建环境：不使用 Docker，全部使用 Ubuntu 24.04 runner
 - 产物目标：`linux-amd64`、`linux-arm64`
 
-Linux 目标使用完整配置，包含 ALSA 和 VAAPI。AMD R7 8745H/8745HS 等 AMD 核显运行时需要系统侧 Mesa VAAPI 驱动可用，常见驱动文件是 `radeonsi_drv_video.so`。
+Linux 目标使用完整配置，包含 ALSA，不启用 `h264_vaapi` / `hevc_vaapi`。
 
-Release 包会包含完整安装目录：`ffmpeg` / `ffprobe`、运行时 `.so`、FFmpeg headers、`libav*.a` 静态库和 pkg-config 文件。构建脚本会用 `readelf` / `ldd` 校验 `ffmpeg` 和 `ffprobe`：默认 VAAPI 构建要求动态链接运行时库，`FULLY_STATIC=1` 构建才要求没有动态解释器和动态 `NEEDED` 依赖。
+Release 包会包含完整安装目录：全静态 `ffmpeg` / `ffprobe`、FFmpeg headers、`libav*.a` 静态库和 pkg-config 文件。构建脚本会用 `readelf` / `ldd` 校验 `ffmpeg` 和 `ffprobe`，如果发现动态解释器或动态 `NEEDED` 依赖会直接失败。
 
-`alsa`、`libsrt`、`libx264`、`libx265` 和 `vaapi` 是必选能力，不会被自动跳过。构建结束会检查 `-f alsa`、`srt://`、`libx264`、`libx265`、`h264_vaapi` 和 `hevc_vaapi` 是否可用。
+`alsa`、`libsrt`、`libx264` 和 `libx265` 是必选能力，不会被自动跳过。构建结束会检查 `-f alsa`、`srt://`、`libx264`、`libx265` 是否可用，并确认 `h264_vaapi` / `hevc_vaapi` 未启用。

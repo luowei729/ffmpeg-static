@@ -24,14 +24,13 @@ CONFIG_FILE="${CONFIG_FILE:-$ROOT_DIR/config/ffmpeg.configure}"
 PKG_CONFIG_PATH_EXTRA="${PKG_CONFIG_PATH_EXTRA:-}"
 EXTRA_FFMPEG_FLAGS="${EXTRA_FFMPEG_FLAGS:-}"
 AUTO_SKIP_MISSING_DEPS="${AUTO_SKIP_MISSING_DEPS:-1}"
-FULLY_STATIC="${FULLY_STATIC:-0}"
+FULLY_STATIC="${FULLY_STATIC:-1}"
 ALSA_CONFIG_DIR="${ALSA_CONFIG_DIR:-/usr/share/alsa}"
 BUILD_BRAND="${BUILD_BRAND:-https://www.lkz.pub}"
 BUILD_TIMEZONE="${BUILD_TIMEZONE:-Asia/Shanghai}"
 BUILD_TIME="${BUILD_TIME:-$(TZ="$BUILD_TIMEZONE" date +%Y%m%d-%H%M%S-CST)}"
 REQUIRED_CONFIG_FLAGS=(
   --enable-alsa
-  --enable-vaapi
   --enable-libsrt
   --enable-libx264
   --enable-libx265
@@ -225,6 +224,12 @@ patch_ffmpeg_configure() {
   log "Patching FFmpeg configure to quote EXTRA_VERSION in config.mak"
   if grep -q '^EXTRA_VERSION=\$extra_version$' "$configure"; then
     sed -i 's/^EXTRA_VERSION=\$extra_version$/EXTRA_VERSION="$extra_version"/' "$configure"
+  fi
+
+  log "Patching FFmpeg configure to hide extra-version from configuration output"
+  if ! grep -q 'case "$v" in --extra-version=' "$configure"; then
+    sed -i '/for v in "$@"; do/a\
+    case "$v" in --extra-version=*|--extra-version) continue ;; esac' "$configure"
   fi
 }
 
@@ -734,13 +739,6 @@ build_ffmpeg() {
   mapfile -t target_flags < <(target_configure_flags)
 
   if [ "$FULLY_STATIC" = "1" ]; then
-    if printf '%s\n' "${config_flags[@]}" | grep -qx -- '--enable-vaapi'; then
-      echo "FULLY_STATIC=1 is incompatible with VAAPI because libva must dlopen GPU drivers at runtime." >&2
-      exit 1
-    fi
-
-    build_libdrm
-    build_libva
     pkg_config_flags=(--pkg-config-flags=--static)
     extra_ldflags="-L$OUTPUT_DIR/lib -static ${EXTRA_LDFLAGS:-}"
   fi
@@ -847,8 +845,14 @@ verify_binary() {
   }
   verify_required_encoder libx264
   verify_required_encoder libx265
-  verify_required_encoder h264_vaapi
-  verify_required_encoder hevc_vaapi
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*h264_vaapi[[:space:]]' && {
+    echo "Unexpected h264_vaapi encoder; VAAPI hardware encoders are intentionally disabled." >&2
+    exit 1
+  }
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*hevc_vaapi[[:space:]]' && {
+    echo "Unexpected hevc_vaapi encoder; VAAPI hardware encoders are intentionally disabled." >&2
+    exit 1
+  }
 }
 
 main() {

@@ -43,5 +43,4 @@
 --enable-libzvbi
 --enable-libzimg
 --enable-alsa
---enable-vaapi
 --enable-librtmp

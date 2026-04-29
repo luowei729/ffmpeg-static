@@ -213,7 +213,7 @@ build_ffmpeg() {
   local -a config_flags
   local -a target_flags
   local extra_ldflags="-L$OUTPUT_DIR/lib -static ${EXTRA_LDFLAGS:-}"
-  local extra_libs="-lpthread -lm -ldl ${EXTRA_LIBS:-}"
+  local extra_libs="-lpthread -lm -ldl -lstdc++ -lssl -lcrypto -latomic ${EXTRA_LIBS:-}"
 
   mapfile -t config_flags < <(read_config_flags)
   mapfile -t target_flags < <(target_configure_flags)

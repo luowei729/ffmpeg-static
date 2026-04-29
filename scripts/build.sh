@@ -174,6 +174,20 @@ sync_ffmpeg() {
   if [ "$FFMPEG_REF" = "master" ] || [ "$FFMPEG_REF" = "main" ]; then
     git -C "$SRC_DIR" reset --hard "origin/$FFMPEG_REF"
   fi
+
+  patch_ffmpeg_version
+}
+
+patch_ffmpeg_version() {
+  local version_sh="$SRC_DIR/ffbuild/version.sh"
+  [ -f "$version_sh" ] || return 0
+
+  log "Patching FFmpeg version.sh for space separator"
+  if grep -q 'test -n "\$3" && version=\$version-\$3' "$version_sh"; then
+    sed -i 's/test -n "\$3" && version=\$version-\$3/test -n "$3" \&\& version="$version $3"/' "$version_sh"
+  elif grep -q 'version=\$version-\$3' "$version_sh"; then
+    sed -i 's/version=\$version-\$3/version="$version $3"/' "$version_sh"
+  fi
 }
 
 sync_srt() {
@@ -339,6 +353,8 @@ build_libva() {
     "$libva_src_dir/configure" \
       --prefix="$OUTPUT_DIR" \
       --libdir="$OUTPUT_DIR/lib" \
+      --sysconfdir=/etc \
+      --with-drivers-path=/usr/lib/x86_64-linux-gnu/dri \
       --enable-static \
       --disable-shared \
       --disable-x11 \
@@ -365,6 +381,21 @@ verify_alsa_runtime_path() {
     log "Verifying ALSA runtime path is portable: $binary"
     if strings "$binary" | grep -Fq "$bad_path"; then
       echo "$binary contains non-portable ALSA config path '$bad_path'." >&2
+      exit 1
+    fi
+  done
+}
+
+verify_libva_runtime_path() {
+  local binary bad_path
+
+  require_cmd strings
+  bad_path="$OUTPUT_DIR/etc/libva.conf"
+
+  for binary in "$OUTPUT_DIR/ffmpeg" "$OUTPUT_DIR/ffprobe"; do
+    log "Verifying libva runtime path is portable: $binary"
+    if strings "$binary" | grep -Fq "$bad_path"; then
+      echo "$binary contains non-portable libva config path '$bad_path'." >&2
       exit 1
     fi
   done
@@ -609,6 +640,7 @@ verify_binary() {
   done
 
   verify_alsa_runtime_path
+  verify_libva_runtime_path
 
   log "Verifying required FFmpeg features"
   "$OUTPUT_DIR/ffmpeg" -hide_banner -devices | grep -Eq '^[[:space:]]*D[ E.]*[[:space:]]+alsa([[:space:]]|$)' || {

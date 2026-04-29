@@ -845,14 +845,14 @@ verify_binary() {
   }
   verify_required_encoder libx264
   verify_required_encoder libx265
-  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*h264_vaapi[[:space:]]' && {
+  if "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*h264_vaapi[[:space:]]'; then
     echo "Unexpected h264_vaapi encoder; VAAPI hardware encoders are intentionally disabled." >&2
     exit 1
-  }
-  "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*hevc_vaapi[[:space:]]' && {
+  fi
+  if "$OUTPUT_DIR/ffmpeg" -hide_banner -encoders | grep -Eq '^[[:space:]]*V.*hevc_vaapi[[:space:]]'; then
     echo "Unexpected hevc_vaapi encoder; VAAPI hardware encoders are intentionally disabled." >&2
     exit 1
-  }
+  fi
 }
 
 main() {

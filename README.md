@@ -26,6 +26,9 @@ sudo ./scripts/install-build-deps.sh
 ```text
 dist/ffmpeg
 dist/ffprobe
+dist/bin/
+dist/include/
+dist/lib/
 dist/build-info.txt
 ```
 
@@ -104,3 +107,5 @@ AUTO_SKIP_MISSING_DEPS=0 ./scripts/build.sh
 - 产物目标：`linux-amd64`、`linux-arm64`
 
 Linux 目标使用完整配置，包含 ALSA。
+
+Release 包会包含完整安装目录：全静态 `ffmpeg` / `ffprobe`、FFmpeg headers、`libav*.a` 静态库和 pkg-config 文件。构建脚本会用 `readelf` / `ldd` 校验 `ffmpeg` 和 `ffprobe`，如果发现动态解释器或动态 `NEEDED` 依赖会直接失败。

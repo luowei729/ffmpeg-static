@@ -196,10 +196,28 @@ verify_binary() {
   log "Built binary:"
   "$OUTPUT_DIR/ffmpeg" -hide_banner -version | sed -n '1,4p'
 
-  if command -v ldd >/dev/null 2>&1; then
-    log "Static link check:"
-    ldd "$OUTPUT_DIR/ffmpeg" || true
-  fi
+  require_cmd readelf
+
+  for binary in "$OUTPUT_DIR/ffmpeg" "$OUTPUT_DIR/ffprobe"; do
+    log "Verifying fully static ELF: $binary"
+    if readelf -l "$binary" | grep -Eq 'INTERP|Requesting program interpreter'; then
+      echo "$binary has a dynamic loader/interpreter; expected a fully static binary." >&2
+      exit 1
+    fi
+
+    if readelf -d "$binary" 2>/dev/null | grep -q 'NEEDED'; then
+      echo "$binary has dynamic NEEDED libraries; expected a fully static binary." >&2
+      exit 1
+    fi
+
+    if command -v ldd >/dev/null 2>&1; then
+      ldd "$binary" 2>&1 | grep -q 'not a dynamic executable' || {
+        echo "$binary is not reported as fully static by ldd." >&2
+        ldd "$binary" >&2 || true
+        exit 1
+      }
+    fi
+  done
 }
 
 main() {

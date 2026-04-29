@@ -61,9 +61,7 @@ jobs:
           name="ffmpeg-${{ matrix.target }}-$safe_ref"
           staging="artifacts/$name"
           mkdir -p "$staging"
-          cp -f "dist/${{ matrix.target }}"/ffmpeg* "$staging/"
-          cp -f "dist/${{ matrix.target }}"/ffprobe* "$staging/"
-          cp -f "dist/${{ matrix.target }}/build-info.txt" "$staging/"
+          cp -a "dist/${{ matrix.target }}/." "$staging/"
           tar -C artifacts -czf "artifacts/$name.tar.gz" "$name"
           echo "asset=artifacts/$name.tar.gz" >> "$GITHUB_OUTPUT"
 

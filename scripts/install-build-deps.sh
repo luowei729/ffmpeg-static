@@ -48,6 +48,7 @@ optional_packages=(
   libfontconfig-dev \
   libfreetype-dev \
   libfribidi-dev \
+  libharfbuzz-dev \
   libgme-dev \
   libgmp-dev \
   libmp3lame-dev \

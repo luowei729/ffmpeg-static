@@ -21,6 +21,7 @@
 --enable-libass
 --enable-libvmaf
 --enable-libfreetype
+--enable-libharfbuzz
 --enable-libmp3lame
 --enable-libopencore-amrnb
 --enable-libopencore-amrwb

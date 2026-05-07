@@ -29,6 +29,7 @@ REQUIRED_CONFIG_FLAGS=(
   --enable-fontconfig
   --enable-libfribidi
   --enable-libfreetype
+  --enable-libharfbuzz
   --enable-libsrt
   --enable-libx264
   --enable-libx265
@@ -79,6 +80,7 @@ pkg_for_flag() {
     --enable-libdav1d) echo "dav1d" ;;
     --enable-libfribidi) echo "fribidi" ;;
     --enable-libfreetype) echo "freetype2" ;;
+    --enable-libharfbuzz) echo "harfbuzz" ;;
     --enable-libgme) echo "libgme" ;;
     --enable-libopencore-amrnb) echo "opencore-amrnb" ;;
     --enable-libopencore-amrwb) echo "opencore-amrwb" ;;

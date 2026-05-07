@@ -12,6 +12,8 @@ SRT_REPO="${SRT_REPO:-https://github.com/Haivision/srt.git}"
 SRT_REF="${SRT_REF:-v1.5.5}"
 ALSA_REPO="${ALSA_REPO:-https://github.com/alsa-project/alsa-lib.git}"
 ALSA_REF="${ALSA_REF:-v1.2.14}"
+HARFBUZZ_REPO="${HARFBUZZ_REPO:-https://github.com/harfbuzz/harfbuzz.git}"
+HARFBUZZ_REF="${HARFBUZZ_REF:-11.5.1}"
 X265_REPO="${X265_REPO:-https://bitbucket.org/multicoreware/x265_git.git}"
 X265_REF="${X265_REF:-4.1}"
 TARGET="${TARGET:-linux-amd64}"
@@ -247,6 +249,53 @@ sync_alsa() {
   git -C "$alsa_src_dir" checkout --force "$ALSA_REF"
 }
 
+sync_harfbuzz() {
+  local harfbuzz_src_dir="$WORK_DIR/harfbuzz"
+
+  mkdir -p "$WORK_DIR"
+  if [ ! -d "$harfbuzz_src_dir/.git" ]; then
+    log "Cloning HarfBuzz from $HARFBUZZ_REPO"
+    git_clone "$HARFBUZZ_REPO" "$harfbuzz_src_dir"
+  fi
+
+  log "Fetching HarfBuzz updates"
+  git -C "$harfbuzz_src_dir" fetch --tags --prune origin
+
+  log "Checking out HarfBuzz ref: $HARFBUZZ_REF"
+  git -C "$harfbuzz_src_dir" checkout --force "$HARFBUZZ_REF"
+}
+
+build_harfbuzz() {
+  local harfbuzz_src_dir="$WORK_DIR/harfbuzz"
+  local harfbuzz_build_dir="$WORK_DIR/build-harfbuzz"
+
+  sync_harfbuzz
+
+  rm -rf "$harfbuzz_build_dir"
+  mkdir -p "$harfbuzz_build_dir" "$OUTPUT_DIR"
+
+  log "Configuring static HarfBuzz"
+  meson setup "$harfbuzz_build_dir" "$harfbuzz_src_dir" \
+    --prefix="$OUTPUT_DIR" \
+    --libdir=lib \
+    --default-library=static \
+    --buildtype=release \
+    -Dtests=disabled \
+    -Ddocs=disabled \
+    -Dintrospection=disabled \
+    -Dutilities=disabled \
+    -Dglib=disabled \
+    -Dgobject=disabled \
+    -Dcairo=disabled \
+    -Dicu=disabled
+
+  log "Compiling static HarfBuzz with $JOBS jobs"
+  ninja -C "$harfbuzz_build_dir" -j "$JOBS"
+
+  log "Installing static HarfBuzz into $OUTPUT_DIR"
+  ninja -C "$harfbuzz_build_dir" install
+}
+
 build_alsa() {
   local alsa_src_dir="$WORK_DIR/alsa-lib"
   local alsa_build_dir="$WORK_DIR/build-alsa"
@@ -466,6 +515,7 @@ build_ffmpeg() {
   export PKG_CONFIG_PATH="$OUTPUT_DIR/lib/pkgconfig:$OUTPUT_DIR/lib64/pkgconfig:$PKG_CONFIG_PATH_EXTRA${PKG_CONFIG_PATH_EXTRA:+:}${PKG_CONFIG_PATH:-}"
 
   build_alsa
+  build_harfbuzz
   build_srt
   build_x265
 
@@ -524,6 +574,9 @@ write_build_info() {
     echo "alsa_ref=$ALSA_REF"
     echo "alsa_commit=$(git -C "$WORK_DIR/alsa-lib" rev-parse HEAD)"
     echo "alsa_describe=$(git -C "$WORK_DIR/alsa-lib" describe --tags --always --dirty 2>/dev/null || true)"
+    echo "harfbuzz_ref=$HARFBUZZ_REF"
+    echo "harfbuzz_commit=$(git -C "$WORK_DIR/harfbuzz" rev-parse HEAD)"
+    echo "harfbuzz_describe=$(git -C "$WORK_DIR/harfbuzz" describe --tags --always --dirty 2>/dev/null || true)"
     echo "x265_ref=$X265_REF"
     echo "x265_commit=$(git -C "$WORK_DIR/x265" rev-parse HEAD)"
     echo "x265_describe=$(git -C "$WORK_DIR/x265" describe --tags --always --dirty 2>/dev/null || true)"

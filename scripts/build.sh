@@ -555,7 +555,7 @@ verify_binary() {
     echo "Missing required SRT protocol; expected 'srt://' to be available." >&2
     exit 1
   }
-  "$OUTPUT_DIR/ffmpeg" -hide_banner -filters | grep -Eq '^[[:space:]]*T?[S.]?[[:space:]]*drawtext[[:space:]]' || {
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -filters | grep -Eq '^[[:space:]]*[.T][.S][[:space:]]+drawtext[[:space:]]' || {
     echo "Missing required drawtext filter; expected static text watermark support." >&2
     exit 1
   }

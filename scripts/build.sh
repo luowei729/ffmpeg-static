@@ -471,8 +471,15 @@ build_ffmpeg() {
 
   local -a config_flags
   local -a target_flags
+  local multiarch_libdir
   local extra_version="${BUILD_BRAND} ${BUILD_TIME}"
-  local extra_ldflags="-L$OUTPUT_DIR/lib -static ${EXTRA_LDFLAGS:-}"
+  multiarch_libdir="$(gcc -print-multiarch 2>/dev/null || true)"
+  if [ -n "$multiarch_libdir" ] && [ -d "/usr/lib/$multiarch_libdir" ]; then
+    multiarch_libdir="-L/usr/lib/$multiarch_libdir"
+  else
+    multiarch_libdir=""
+  fi
+  local extra_ldflags="-L$OUTPUT_DIR/lib $multiarch_libdir -static ${EXTRA_LDFLAGS:-}"
   local extra_libs="-lpthread -lm -ldl -lstdc++ -lssl -lcrypto -latomic ${EXTRA_LIBS:-}"
 
   mapfile -t config_flags < <(read_config_flags)

@@ -26,6 +26,9 @@ BUILD_TIMEZONE="${BUILD_TIMEZONE:-Asia/Shanghai}"
 BUILD_TIME="${BUILD_TIME:-$(TZ="$BUILD_TIMEZONE" date +%Y%m%d-%H%M%S-CST)}"
 REQUIRED_CONFIG_FLAGS=(
   --enable-alsa
+  --enable-fontconfig
+  --enable-libfribidi
+  --enable-libfreetype
   --enable-libsrt
   --enable-libx264
   --enable-libx265
@@ -550,6 +553,10 @@ verify_binary() {
   }
   "$OUTPUT_DIR/ffmpeg" -hide_banner -protocols | grep -Eq '^[[:space:]]*srt$' || {
     echo "Missing required SRT protocol; expected 'srt://' to be available." >&2
+    exit 1
+  }
+  "$OUTPUT_DIR/ffmpeg" -hide_banner -filters | grep -Eq '^[[:space:]]*T?[S.]?[[:space:]]*drawtext[[:space:]]' || {
+    echo "Missing required drawtext filter; expected static text watermark support." >&2
     exit 1
   }
   verify_required_encoder libx264

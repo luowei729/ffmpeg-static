@@ -9,6 +9,7 @@
 --disable-outdev=sndio
 --enable-pic
 --enable-pthreads
+--enable-filter=drawtext
 --enable-fontconfig
 --enable-frei0r
 --enable-openssl

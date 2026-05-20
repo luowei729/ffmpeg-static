@@ -4,7 +4,8 @@
 --disable-shared
 --disable-debug
 --disable-doc
---disable-ffplay
+--enable-ffplay
+--enable-sdl2
 --disable-indev=sndio
 --disable-outdev=sndio
 --enable-pic

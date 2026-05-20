@@ -28,6 +28,7 @@ required_packages=(
   flex \
   git \
   libasound2-dev \
+  libsdl2-dev \
   libtool \
   meson \
   nasm \

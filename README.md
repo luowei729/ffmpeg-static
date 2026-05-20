@@ -1,6 +1,6 @@
 # ffmpeg-static
 
-用于同步并编译最新 FFmpeg 静态版本的项目。默认目标是 Linux x86_64 静态 `ffmpeg` / `ffprobe`，并补充常用能力：
+用于同步并编译最新 FFmpeg 静态版本的项目。默认目标是 Linux x86_64 静态 `ffmpeg` / `ffprobe` / `ffplay`，并补充常用能力：
 
 - AAC: FFmpeg 原生 AAC 编码/解码
 - H.264: `libx264`
@@ -26,6 +26,7 @@ sudo ./scripts/install-build-deps.sh
 ```text
 dist/ffmpeg
 dist/ffprobe
+dist/ffplay
 dist/bin/
 dist/include/
 dist/lib/
@@ -82,7 +83,7 @@ EXTRA_FFMPEG_FLAGS="--enable-nonfree --enable-libfdk-aac" ./scripts/build.sh
 核心配置保存在 [config/ffmpeg.configure](config/ffmpeg.configure)，尽量贴近下面这类静态构建：
 
 ```text
---enable-gpl --enable-version3 --enable-static --disable-debug --disable-ffplay
+--enable-gpl --enable-version3 --enable-static --disable-debug --enable-ffplay --enable-sdl2
 --enable-libx264 --enable-libx265 --enable-libsrt --enable-libvpx
 --enable-libaom --enable-libdav1d --enable-libopus --enable-libvorbis
 --enable-libmp3lame --enable-libass --enable-libfreetype --enable-fontconfig
@@ -99,6 +100,7 @@ AUTO_SKIP_MISSING_DEPS=0 ./scripts/build.sh
 
 ```bash
 ./dist/ffmpeg -version
+./dist/ffplay -version
 ./dist/ffmpeg -protocols | grep -E 'rtmp|srt'
 ./dist/ffmpeg -encoders | grep -E 'libx264|libx265|aac'
 ```
@@ -114,6 +116,6 @@ AUTO_SKIP_MISSING_DEPS=0 ./scripts/build.sh
 
 Linux 目标使用完整配置，包含 ALSA，不启用 `h264_vaapi` / `hevc_vaapi`。
 
-Release 包会包含完整安装目录：全静态 `ffmpeg` / `ffprobe`、FFmpeg headers、`libav*.a` 静态库和 pkg-config 文件。构建脚本会用 `readelf` / `ldd` 校验 `ffmpeg` 和 `ffprobe`，如果发现动态解释器或动态 `NEEDED` 依赖会直接失败。
+Release 包会包含完整安装目录：全静态 `ffmpeg` / `ffprobe` / `ffplay`、FFmpeg headers、`libav*.a` 静态库和 pkg-config 文件。构建脚本会用 `readelf` / `ldd` 校验 `ffmpeg`、`ffprobe` 和 `ffplay`，如果发现动态解释器或动态 `NEEDED` 依赖会直接失败。
 
 `alsa`、`libsrt`、`libx264` 和 `libx265` 是必选能力，不会被自动跳过。构建结束会检查 `-f alsa`、`srt://`、`libx264`、`libx265` 是否可用，并确认 `h264_vaapi` / `hevc_vaapi` 未启用。

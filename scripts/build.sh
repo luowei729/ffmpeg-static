@@ -35,6 +35,7 @@ REQUIRED_CONFIG_FLAGS=(
   --enable-libsrt
   --enable-libx264
   --enable-libx265
+  --enable-sdl2
 )
 
 log() {
@@ -90,6 +91,7 @@ pkg_for_flag() {
     --enable-libopus) echo "opus" ;;
     --enable-librtmp) echo "librtmp" ;;
     --enable-librubberband) echo "rubberband" ;;
+    --enable-sdl2) echo "sdl2" ;;
     --enable-libsoxr) echo "soxr" ;;
     --enable-libspeex) echo "speex" ;;
     --enable-libsrt) echo "srt" ;;
@@ -210,10 +212,10 @@ patch_ffmpeg_configure() {
     sed -i 's/^EXTRA_VERSION=\$extra_version$/EXTRA_VERSION="$extra_version"/' "$configure"
   fi
 
-  log "Patching FFmpeg configure to hide extra-version from configuration output"
-  if ! grep -q 'case "$v" in --extra-version=' "$configure"; then
+  log "Patching FFmpeg configure to hide build-only flags from configuration output"
+  if ! grep -q 'case "$v" in --prefix=\*|--pkg-config-flags=' "$configure"; then
     sed -i '/for v in "$@"; do/a\
-    case "$v" in --extra-version=*|--extra-version) continue ;; esac' "$configure"
+    case "$v" in --prefix=*|--prefix|--pkg-config-flags=*|--pkg-config-flags|--extra-cflags=*|--extra-cflags|--extra-ldflags=*|--extra-ldflags|--extra-libs=*|--extra-libs|--extra-version=*|--extra-version) continue ;; esac' "$configure"
   fi
 }
 
@@ -336,7 +338,7 @@ verify_alsa_runtime_path() {
   require_cmd strings
   bad_path="$OUTPUT_DIR/share/alsa/alsa.conf"
 
-  for binary in "$OUTPUT_DIR/ffmpeg" "$OUTPUT_DIR/ffprobe"; do
+  for binary in "$OUTPUT_DIR/ffmpeg" "$OUTPUT_DIR/ffprobe" "$OUTPUT_DIR/ffplay"; do
     log "Verifying ALSA runtime path is portable: $binary"
     if strings "$binary" | grep -Fq "$bad_path"; then
       echo "$binary contains non-portable ALSA config path '$bad_path'." >&2
@@ -365,7 +367,7 @@ verify_binary_linkage() {
 
   require_cmd readelf
 
-  for binary in "$OUTPUT_DIR/ffmpeg" "$OUTPUT_DIR/ffprobe"; do
+  for binary in "$OUTPUT_DIR/ffmpeg" "$OUTPUT_DIR/ffprobe" "$OUTPUT_DIR/ffplay"; do
     log "Verifying fully static ELF: $binary"
     if readelf -l "$binary" | grep -Eq 'INTERP|Requesting program interpreter'; then
       echo "$binary has a dynamic loader/interpreter; expected a fully static binary." >&2
@@ -593,15 +595,20 @@ write_build_info() {
 }
 
 verify_binary() {
-  if [ ! -x "$OUTPUT_DIR/bin/ffmpeg" ]; then
-    echo "Build finished but $OUTPUT_DIR/bin/ffmpeg was not found." >&2
-    exit 1
-  fi
+  local binary
+
+  for binary in ffmpeg ffprobe ffplay; do
+    if [ ! -x "$OUTPUT_DIR/bin/$binary" ]; then
+      echo "Build finished but $OUTPUT_DIR/bin/$binary was not found." >&2
+      exit 1
+    fi
+  done
 
   cp -f "$OUTPUT_DIR/bin/ffmpeg" "$OUTPUT_DIR/ffmpeg"
   cp -f "$OUTPUT_DIR/bin/ffprobe" "$OUTPUT_DIR/ffprobe"
+  cp -f "$OUTPUT_DIR/bin/ffplay" "$OUTPUT_DIR/ffplay"
 
-  log "Built binary:"
+  log "Built binaries:"
   "$OUTPUT_DIR/ffmpeg" -hide_banner -version | sed -n '1,4p'
 
   verify_binary_linkage

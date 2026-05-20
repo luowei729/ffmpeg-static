@@ -14,6 +14,8 @@ ALSA_REPO="${ALSA_REPO:-https://github.com/alsa-project/alsa-lib.git}"
 ALSA_REF="${ALSA_REF:-v1.2.14}"
 HARFBUZZ_REPO="${HARFBUZZ_REPO:-https://github.com/harfbuzz/harfbuzz.git}"
 HARFBUZZ_REF="${HARFBUZZ_REF:-11.5.1}"
+SDL2_REPO="${SDL2_REPO:-https://github.com/libsdl-org/SDL.git}"
+SDL2_REF="${SDL2_REF:-release-2.30.12}"
 X265_REPO="${X265_REPO:-https://bitbucket.org/multicoreware/x265_git.git}"
 X265_REF="${X265_REF:-4.1}"
 TARGET="${TARGET:-linux-amd64}"
@@ -267,6 +269,22 @@ sync_harfbuzz() {
   git -C "$harfbuzz_src_dir" checkout --force "$HARFBUZZ_REF"
 }
 
+sync_sdl2() {
+  local sdl2_src_dir="$WORK_DIR/sdl2"
+
+  mkdir -p "$WORK_DIR"
+  if [ ! -d "$sdl2_src_dir/.git" ]; then
+    log "Cloning SDL2 from $SDL2_REPO"
+    git_clone "$SDL2_REPO" "$sdl2_src_dir"
+  fi
+
+  log "Fetching SDL2 updates"
+  git -C "$sdl2_src_dir" fetch --tags --prune origin
+
+  log "Checking out SDL2 ref: $SDL2_REF"
+  git -C "$sdl2_src_dir" checkout --force "$SDL2_REF"
+}
+
 build_harfbuzz() {
   local harfbuzz_src_dir="$WORK_DIR/harfbuzz"
   local harfbuzz_build_dir="$WORK_DIR/build-harfbuzz"
@@ -330,6 +348,59 @@ build_alsa() {
 
   log "Installing static ALSA into $OUTPUT_DIR"
   make -C "$alsa_build_dir" install
+}
+
+build_sdl2() {
+  local sdl2_src_dir="$WORK_DIR/sdl2"
+  local sdl2_build_dir="$WORK_DIR/build-sdl2"
+
+  sync_sdl2
+
+  rm -rf "$sdl2_build_dir"
+  mkdir -p "$sdl2_build_dir" "$OUTPUT_DIR"
+
+  log "Configuring static SDL2"
+  cmake -S "$sdl2_src_dir" -B "$sdl2_build_dir" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$OUTPUT_DIR" \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DSDL_SHARED=OFF \
+    -DSDL_STATIC=ON \
+    -DSDL_STATIC_PIC=ON \
+    -DSDL_TEST=OFF \
+    -DSDL_TESTS=OFF \
+    -DSDL2_DISABLE_SDL2MAIN=ON \
+    -DSDL_DUMMYAUDIO=ON \
+    -DSDL_DISKAUDIO=ON \
+    -DSDL_DUMMYVIDEO=ON \
+    -DSDL_OFFSCREEN=ON \
+    -DSDL_ALSA=OFF \
+    -DSDL_ARTS=OFF \
+    -DSDL_DBUS=OFF \
+    -DSDL_ESD=OFF \
+    -DSDL_HIDAPI=OFF \
+    -DSDL_IBUS=OFF \
+    -DSDL_JACK=OFF \
+    -DSDL_KMSDRM=OFF \
+    -DSDL_LIBSAMPLERATE=OFF \
+    -DSDL_LIBUDEV=OFF \
+    -DSDL_NAS=OFF \
+    -DSDL_OPENGL=OFF \
+    -DSDL_OPENGLES=OFF \
+    -DSDL_PIPEWIRE=OFF \
+    -DSDL_PULSEAUDIO=OFF \
+    -DSDL_RPATH=OFF \
+    -DSDL_SNDIO=OFF \
+    -DSDL_VULKAN=OFF \
+    -DSDL_WAYLAND=OFF \
+    -DSDL_X11=OFF
+
+  log "Compiling static SDL2 with $JOBS jobs"
+  cmake --build "$sdl2_build_dir" --parallel "$JOBS"
+
+  log "Installing static SDL2 into $OUTPUT_DIR"
+  cmake --install "$sdl2_build_dir"
 }
 
 verify_alsa_runtime_path() {
@@ -517,6 +588,7 @@ build_ffmpeg() {
   export PKG_CONFIG_PATH="$OUTPUT_DIR/lib/pkgconfig:$OUTPUT_DIR/lib64/pkgconfig:$PKG_CONFIG_PATH_EXTRA${PKG_CONFIG_PATH_EXTRA:+:}${PKG_CONFIG_PATH:-}"
 
   build_alsa
+  build_sdl2
   build_harfbuzz
   build_srt
   build_x265
@@ -579,6 +651,9 @@ write_build_info() {
     echo "harfbuzz_ref=$HARFBUZZ_REF"
     echo "harfbuzz_commit=$(git -C "$WORK_DIR/harfbuzz" rev-parse HEAD)"
     echo "harfbuzz_describe=$(git -C "$WORK_DIR/harfbuzz" describe --tags --always --dirty 2>/dev/null || true)"
+    echo "sdl2_ref=$SDL2_REF"
+    echo "sdl2_commit=$(git -C "$WORK_DIR/sdl2" rev-parse HEAD)"
+    echo "sdl2_describe=$(git -C "$WORK_DIR/sdl2" describe --tags --always --dirty 2>/dev/null || true)"
     echo "x265_ref=$X265_REF"
     echo "x265_commit=$(git -C "$WORK_DIR/x265" rev-parse HEAD)"
     echo "x265_describe=$(git -C "$WORK_DIR/x265" describe --tags --always --dirty 2>/dev/null || true)"

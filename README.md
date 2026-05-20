@@ -60,6 +60,12 @@ SRT 默认从源码静态编译 `v1.5.5`，确保 `srt://` 在全静态构建中
 SRT_REF=v1.5.5 ./scripts/build.sh
 ```
 
+SDL2 默认从源码静态编译，用于输出全静态 `ffplay`：
+
+```bash
+SDL2_REF=release-2.30.12 ./scripts/build.sh
+```
+
 ## 常用参数
 
 ```bash

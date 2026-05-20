@@ -28,7 +28,6 @@ required_packages=(
   flex \
   git \
   libasound2-dev \
-  libsdl2-dev \
   libtool \
   meson \
   nasm \
@@ -82,7 +81,10 @@ apt-get install -y --no-install-recommends "${required_packages[@]}"
 
 for package in "${optional_packages[@]}"; do
   if apt-cache show "$package" >/dev/null 2>&1; then
-    apt-get install -y --no-install-recommends "$package"
+    if ! apt-get install -y --no-install-recommends "$package"; then
+      echo "Skipping optional package after install failure: $package" >&2
+      apt-get update || true
+    fi
   else
     echo "Skipping unavailable optional package: $package" >&2
   fi
